@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Wildlife Image Culling</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>Wildlife Image Culling</h1>
+    <div id="health" class="health"></div>
+  </header>
+
+  <section id="ingest-bar">
+    <input id="folder-input" type="text" placeholder="/Volumes/SDCARD/DCIM/100EOSR5  or  ~/Photos/2026-05-09 Owls" spellcheck="false" />
+    <label class="recursive"><input id="recursive" type="checkbox" checked /> recursive</label>
+    <button id="ingest-btn">Ingest</button>
+    <span id="ingest-status"></span>
+  </section>
+
+  <section id="folders-bar"></section>
+
+  <section id="filter-bar">
+    <label>Filter:</label>
+    <select id="filter-rating">
+      <option value="">all ratings</option>
+      <option value="0">unrated</option>
+      <option value="1">1+ stars</option>
+      <option value="3">3+ stars</option>
+      <option value="4">4+ stars</option>
+      <option value="5">5 stars only</option>
+    </select>
+    <span id="stats" class="stats"></span>
+  </section>
+
+  <main id="grid"></main>
+
+  <div id="modal" class="modal hidden">
+    <div class="modal-content">
+      <button id="modal-close" class="close">&times;</button>
+      <div class="modal-image-wrap"><img id="modal-img" alt="" /></div>
+      <aside class="modal-side">
+        <h2 id="modal-filename"></h2>
+        <div id="modal-ai" class="ai-block"></div>
+        <div class="rating">
+          <label>Your rating</label>
+          <div id="stars" class="stars" data-rating="0">
+            <span data-v="1">★</span><span data-v="2">★</span><span data-v="3">★</span><span data-v="4">★</span><span data-v="5">★</span>
+          </div>
+          <button id="clear-rating" class="text">clear</button>
+        </div>
+        <div class="tags">
+          <label>Tags</label>
+          <div id="tag-chips" class="chips">
+            <button data-tag="Keep">Keep</button>
+            <button data-tag="Portfolio">Portfolio</button>
+            <button data-tag="Reject">Reject</button>
+            <button data-tag="Silhouette-Intentional">Silhouette-Intentional</button>
+            <button data-tag="Eyes-Sharp">Eyes-Sharp</button>
+            <button data-tag="Soft-Focus">Soft-Focus</button>
+          </div>
+        </div>
+        <div class="notes">
+          <label for="notes-input">Notes</label>
+          <textarea id="notes-input" rows="3" placeholder="Your private notes about this image"></textarea>
+        </div>
+        <div id="save-status" class="save-status"></div>
+        <nav class="modal-nav">
+          <button id="prev-btn">&larr; prev</button>
+          <button id="next-btn">next &rarr;</button>
+        </nav>
+      </aside>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

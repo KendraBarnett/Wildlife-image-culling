@@ -1,0 +1,315 @@
+const state = {
+  folder: null,
+  images: [],
+  filterRating: "",
+  current: null,
+  saveTimer: null,
+};
+
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => document.querySelectorAll(sel);
+
+async function jget(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return r.json();
+}
+async function jpost(url, body) {
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+  return r.json();
+}
+
+async function refreshHealth() {
+  try {
+    const h = await jget("/api/health");
+    const el = $("#health");
+    if (h.ok) {
+      el.textContent = `ready · ${h.vision_model}`;
+      el.className = "health ok";
+    } else {
+      el.textContent = h.ollama_issue || "issue";
+      el.className = "health bad";
+    }
+  } catch (e) {
+    $("#health").textContent = "server unreachable";
+    $("#health").className = "health bad";
+  }
+}
+
+async function refreshFolders() {
+  const folders = await jget("/api/folders");
+  const bar = $("#folders-bar");
+  bar.innerHTML = "";
+  for (const f of folders) {
+    const b = document.createElement("button");
+    b.className = "folder-chip" + (state.folder === f.folder ? " active" : "");
+    const short = f.folder.split("/").slice(-2).join("/");
+    b.textContent = `${short} (${f.n})`;
+    b.title = f.folder;
+    b.onclick = () => selectFolder(f.folder);
+    bar.appendChild(b);
+  }
+}
+
+async function refreshStats() {
+  const s = await jget("/api/stats");
+  $("#stats").textContent = `${s.total || 0} total · ${s.analyzed || 0} analyzed · ${s.pending || 0} pending · ${s.rated || 0} rated`;
+}
+
+async function selectFolder(folder) {
+  state.folder = folder;
+  await refreshFolders();
+  await refreshGrid();
+}
+
+async function refreshGrid() {
+  const params = new URLSearchParams();
+  if (state.folder) params.set("folder", state.folder);
+  const fr = state.filterRating;
+  if (fr === "0") {
+    params.set("rating_max", "0");
+  } else if (fr) {
+    params.set("rating_min", fr);
+    if (fr === "5") params.set("rating_max", "5");
+  }
+  const data = await jget(`/api/images?${params}`);
+  state.images = data.images;
+  renderGrid();
+}
+
+function renderGrid() {
+  const grid = $("#grid");
+  grid.innerHTML = "";
+  for (const img of state.images) {
+    grid.appendChild(renderCard(img));
+  }
+}
+
+function renderCard(img) {
+  const card = document.createElement("div");
+  card.className = "card";
+  for (const t of img.user_tags || []) card.classList.add(`tag-${t}`);
+
+  const im = document.createElement("img");
+  im.loading = "lazy";
+  im.src = `/api/thumb/${img.id}`;
+  im.alt = img.filename;
+  card.appendChild(im);
+
+  const badges = document.createElement("div");
+  badges.className = "badges";
+  if (img.ai_status === "done") {
+    if (img.ai_eye_focus === "sharp") badges.appendChild(badge("eye✓", "good"));
+    else if (img.ai_eye_focus === "soft") badges.appendChild(badge("eye~", "warn"));
+    if (img.ai_motion === "in_motion") badges.appendChild(badge("motion", "good"));
+    else if (img.ai_motion === "blurred") badges.appendChild(badge("blur", "warn"));
+    if (img.ai_is_silhouette) badges.appendChild(badge("silh", "silh"));
+  }
+  card.appendChild(badges);
+
+  const overlay = document.createElement("div");
+  overlay.className = "rating-overlay";
+  const stars = document.createElement("span");
+  stars.className = "stars-mini";
+  stars.textContent = img.user_rating ? "★".repeat(img.user_rating) : "";
+  overlay.appendChild(stars);
+  const scores = document.createElement("span");
+  scores.className = "scores";
+  if (img.ai_status === "done") {
+    scores.textContent = `art ${img.ai_artistic_score || "?"} · port ${img.ai_portfolio_score || "?"}`;
+  } else if (img.ai_status === "pending") {
+    scores.textContent = "analyzing…";
+  } else if (img.ai_status === "error") {
+    scores.textContent = "ai error";
+  }
+  overlay.appendChild(scores);
+  card.appendChild(overlay);
+
+  card.onclick = () => openModal(img.id);
+  return card;
+}
+
+function badge(text, cls) {
+  const b = document.createElement("span");
+  b.className = "badge " + (cls || "");
+  b.textContent = text;
+  return b;
+}
+
+async function openModal(id) {
+  const img = await jget(`/api/image/${id}`);
+  state.current = img;
+  $("#modal").classList.remove("hidden");
+  $("#modal-img").src = `/api/preview/${id}`;
+  $("#modal-filename").textContent = img.filename;
+  renderAiBlock(img);
+  setStars(img.user_rating || 0);
+  setTags(img.user_tags || []);
+  $("#notes-input").value = img.user_notes || "";
+  $("#save-status").textContent = "";
+}
+
+function renderAiBlock(img) {
+  const el = $("#modal-ai");
+  if (img.ai_status === "pending") {
+    el.innerHTML = `<div class="pending">AI is analyzing this image…</div>`;
+    return;
+  }
+  if (img.ai_status === "error") {
+    el.innerHTML = `<div class="pending">AI error. See terminal.</div>`;
+    return;
+  }
+  const a = img.ai || {};
+  const issues = (a.technical_issues || []).join(", ") || "—";
+  el.innerHTML = `
+    <div class="scores-row">
+      <div class="score-pill"><div class="label">artistic</div><div class="val">${a.artistic_score ?? "?"}</div></div>
+      <div class="score-pill"><div class="label">portfolio</div><div class="val">${a.portfolio_potential ?? "?"}</div></div>
+    </div>
+    <div class="row"><span>subject</span><strong>${esc(a.subject) || "—"}</strong></div>
+    <div class="row"><span>eye focus</span><strong>${esc(a.eye_focus) || "—"}</strong></div>
+    <div class="row"><span>motion</span><strong>${esc(a.motion) || "—"}</strong></div>
+    <div class="row"><span>composition</span><strong>${esc(a.composition) || "—"}</strong></div>
+    <div class="row"><span>lighting</span><strong>${esc(a.lighting) || "—"}</strong></div>
+    <div class="row"><span>silhouette</span><strong>${a.is_silhouette ? "yes" : "no"}</strong></div>
+    <div class="row"><span>issues</span><strong>${esc(issues)}</strong></div>
+    ${a.notes ? `<div class="notes-line">${esc(a.notes)}</div>` : ""}
+  `;
+}
+
+function esc(s) {
+  if (s === null || s === undefined) return "";
+  return String(s).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[c]);
+}
+
+function setStars(v) {
+  $("#stars").dataset.rating = v;
+  $$("#stars span").forEach((el) => {
+    el.classList.toggle("lit", parseInt(el.dataset.v) <= v);
+  });
+}
+
+function setTags(tags) {
+  $$("#tag-chips button").forEach((el) => {
+    el.classList.toggle("active", tags.includes(el.dataset.tag));
+  });
+}
+
+function getActiveTags() {
+  return [...$$("#tag-chips button.active")].map((el) => el.dataset.tag);
+}
+
+function scheduleSave() {
+  if (!state.current) return;
+  if (state.saveTimer) clearTimeout(state.saveTimer);
+  $("#save-status").textContent = "saving…";
+  $("#save-status").className = "save-status";
+  state.saveTimer = setTimeout(doSave, 350);
+}
+
+async function doSave() {
+  if (!state.current) return;
+  const id = state.current.id;
+  const rating = parseInt($("#stars").dataset.rating || "0") || null;
+  const tags = getActiveTags();
+  const notes = $("#notes-input").value;
+  try {
+    const r = await jpost(`/api/image/${id}/rate`, { rating, tags, notes });
+    $("#save-status").textContent = r.sidecar_written ? "saved · xmp written" : `saved (xmp error: ${r.sidecar_error})`;
+    $("#save-status").className = "save-status " + (r.sidecar_written ? "ok" : "bad");
+    state.current.user_rating = rating;
+    state.current.user_tags = tags;
+    state.current.user_notes = notes;
+    const idx = state.images.findIndex((x) => x.id === id);
+    if (idx >= 0) {
+      state.images[idx].user_rating = rating;
+      state.images[idx].user_tags = tags;
+    }
+    renderGrid();
+  } catch (e) {
+    $("#save-status").textContent = "save failed: " + e.message;
+    $("#save-status").className = "save-status bad";
+  }
+}
+
+function closeModal() {
+  $("#modal").classList.add("hidden");
+  state.current = null;
+}
+
+function step(delta) {
+  if (!state.current) return;
+  const idx = state.images.findIndex((x) => x.id === state.current.id);
+  if (idx < 0) return;
+  const next = state.images[idx + delta];
+  if (next) openModal(next.id);
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  $("#ingest-btn").onclick = async () => {
+    const folder = $("#folder-input").value.trim();
+    if (!folder) return;
+    const recursive = $("#recursive").checked;
+    $("#ingest-status").textContent = "ingesting…";
+    try {
+      const r = await jpost("/api/ingest", { folder, recursive });
+      $("#ingest-status").textContent = `${r.new} new · ${r.skipped} skipped (${r.elapsed_sec}s)`;
+      await refreshFolders();
+      await selectFolder(r.folder);
+    } catch (e) {
+      $("#ingest-status").textContent = "error: " + e.message;
+    }
+  };
+
+  $("#filter-rating").onchange = (e) => {
+    state.filterRating = e.target.value;
+    refreshGrid();
+  };
+
+  $("#stars").onclick = (e) => {
+    const v = parseInt(e.target.dataset.v);
+    if (!v) return;
+    setStars(v);
+    scheduleSave();
+  };
+  $("#clear-rating").onclick = () => {
+    setStars(0);
+    scheduleSave();
+  };
+  $("#tag-chips").onclick = (e) => {
+    if (e.target.tagName !== "BUTTON") return;
+    e.target.classList.toggle("active");
+    scheduleSave();
+  };
+  $("#notes-input").oninput = scheduleSave;
+
+  $("#modal-close").onclick = closeModal;
+  $("#prev-btn").onclick = () => step(-1);
+  $("#next-btn").onclick = () => step(1);
+
+  document.addEventListener("keydown", (e) => {
+    if ($("#modal").classList.contains("hidden")) return;
+    if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") return;
+    if (e.key === "Escape") closeModal();
+    else if (e.key === "ArrowLeft") step(-1);
+    else if (e.key === "ArrowRight") step(1);
+    else if (e.key >= "1" && e.key <= "5") {
+      setStars(parseInt(e.key));
+      scheduleSave();
+    } else if (e.key === "0") {
+      setStars(0);
+      scheduleSave();
+    }
+  });
+
+  refreshHealth();
+  refreshFolders();
+  refreshStats();
+  setInterval(() => { refreshStats(); refreshHealth(); }, 5000);
+  setInterval(() => { if (state.folder) refreshGrid(); }, 8000);
+});

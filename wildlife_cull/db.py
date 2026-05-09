@@ -1,0 +1,177 @@
+import sqlite3
+import json
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Optional, Iterator
+
+from .config import DB_PATH
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS images (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path TEXT UNIQUE NOT NULL,
+    filename TEXT NOT NULL,
+    folder TEXT NOT NULL,
+    file_size INTEGER,
+    mtime REAL,
+    is_raw INTEGER NOT NULL DEFAULT 0,
+    preview_path TEXT,
+    thumb_path TEXT,
+    width INTEGER,
+    height INTEGER,
+    ingested_at REAL NOT NULL,
+
+    ai_status TEXT NOT NULL DEFAULT 'pending',
+    ai_json TEXT,
+    ai_artistic_score INTEGER,
+    ai_portfolio_score INTEGER,
+    ai_eye_focus TEXT,
+    ai_motion TEXT,
+    ai_is_silhouette INTEGER,
+    ai_subject TEXT,
+    ai_analyzed_at REAL,
+
+    embedding BLOB,
+    embedding_model TEXT,
+
+    user_rating INTEGER,
+    user_tags TEXT,
+    user_notes TEXT,
+    user_updated_at REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_images_folder ON images(folder);
+CREATE INDEX IF NOT EXISTS idx_images_ai_status ON images(ai_status);
+CREATE INDEX IF NOT EXISTS idx_images_user_rating ON images(user_rating);
+
+CREATE TABLE IF NOT EXISTS folders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path TEXT UNIQUE NOT NULL,
+    ingested_at REAL NOT NULL,
+    image_count INTEGER NOT NULL DEFAULT 0
+);
+"""
+
+
+def init_db() -> None:
+    with connect() as conn:
+        conn.executescript(SCHEMA)
+
+
+@contextmanager
+def connect() -> Iterator[sqlite3.Connection]:
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    try:
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def upsert_image(conn: sqlite3.Connection, row: dict) -> int:
+    cols = list(row.keys())
+    placeholders = ",".join("?" for _ in cols)
+    col_list = ",".join(cols)
+    update_clause = ",".join(f"{c}=excluded.{c}" for c in cols if c != "path")
+    sql = (
+        f"INSERT INTO images ({col_list}) VALUES ({placeholders}) "
+        f"ON CONFLICT(path) DO UPDATE SET {update_clause}"
+    )
+    cur = conn.execute(sql, [row[c] for c in cols])
+    if cur.lastrowid:
+        return cur.lastrowid
+    existing = conn.execute("SELECT id FROM images WHERE path=?", (row["path"],)).fetchone()
+    return existing["id"]
+
+
+def set_ai_result(conn: sqlite3.Connection, image_id: int, ai: dict, raw_json: str, ts: float) -> None:
+    conn.execute(
+        """UPDATE images SET
+            ai_status='done',
+            ai_json=?,
+            ai_artistic_score=?,
+            ai_portfolio_score=?,
+            ai_eye_focus=?,
+            ai_motion=?,
+            ai_is_silhouette=?,
+            ai_subject=?,
+            ai_analyzed_at=?
+        WHERE id=?""",
+        (
+            raw_json,
+            ai.get("artistic_score"),
+            ai.get("portfolio_potential"),
+            ai.get("eye_focus"),
+            ai.get("motion"),
+            1 if ai.get("is_silhouette") else 0,
+            ai.get("subject"),
+            ts,
+            image_id,
+        ),
+    )
+
+
+def set_ai_error(conn: sqlite3.Connection, image_id: int, message: str) -> None:
+    conn.execute(
+        "UPDATE images SET ai_status='error', ai_json=? WHERE id=?",
+        (json.dumps({"error": message}), image_id),
+    )
+
+
+def set_embedding(conn: sqlite3.Connection, image_id: int, vec_bytes: bytes, model: str) -> None:
+    conn.execute(
+        "UPDATE images SET embedding=?, embedding_model=? WHERE id=?",
+        (vec_bytes, model, image_id),
+    )
+
+
+def set_user_rating(
+    conn: sqlite3.Connection,
+    image_id: int,
+    rating: Optional[int],
+    tags: Optional[list],
+    notes: Optional[str],
+    ts: float,
+) -> None:
+    conn.execute(
+        "UPDATE images SET user_rating=?, user_tags=?, user_notes=?, user_updated_at=? WHERE id=?",
+        (rating, json.dumps(tags or []), notes, ts, image_id),
+    )
+
+
+def list_pending_for_ai(conn: sqlite3.Connection, limit: int = 1) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM images WHERE ai_status='pending' ORDER BY id LIMIT ?",
+        (limit,),
+    ).fetchall()
+
+
+def list_pending_for_embedding(conn: sqlite3.Connection, limit: int = 8) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM images WHERE embedding IS NULL ORDER BY id LIMIT ?",
+        (limit,),
+    ).fetchall()
+
+
+def folder_summary(conn: sqlite3.Connection, folder: str) -> dict:
+    row = conn.execute(
+        """SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN ai_status='done' THEN 1 ELSE 0 END) AS analyzed,
+            SUM(CASE WHEN ai_status='pending' THEN 1 ELSE 0 END) AS pending,
+            SUM(CASE WHEN ai_status='error' THEN 1 ELSE 0 END) AS errored,
+            SUM(CASE WHEN user_rating IS NOT NULL THEN 1 ELSE 0 END) AS rated
+        FROM images WHERE folder=?""",
+        (folder,),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
+def list_folders(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT folder, COUNT(*) AS n, MAX(ingested_at) AS last "
+        "FROM images GROUP BY folder ORDER BY last DESC"
+    ).fetchall()
