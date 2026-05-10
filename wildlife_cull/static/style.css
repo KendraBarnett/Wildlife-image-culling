@@ -60,7 +60,8 @@ body.select-mode .card:hover { outline: 2px solid var(--accent); }
 .judge-state { font-size: 11px; color: var(--muted); font-style: italic; }
 .judge-scores { display: flex; gap: 10px; }
 .judge-scores .score { font-size: 11px; color: var(--muted); }
-.judge-scores .score b { color: var(--accent); font-size: 14px; margin-left: 2px; }
+.judge-scores .score b { color: var(--accent); font-size: 16px; margin-left: 2px; }
+.judge-scores .denom { color: var(--muted); font-size: 10px; margin-left: 1px; }
 .judge-notes { font-size: 11px; color: var(--muted); font-style: italic; line-height: 1.3; }
 .judge-error-detail { font-size: 10px; color: #ff8a8a; font-family: ui-monospace, SFMono-Regular, monospace; word-break: break-word; }
 .judge-model { font-size: 9px; color: var(--muted); opacity: 0.7; font-family: ui-monospace, SFMono-Regular, monospace; margin-top: auto; }
@@ -95,7 +96,9 @@ body.select-mode .card:hover { outline: 2px solid var(--accent); }
 .modal-content { display: flex; width: 100%; height: 100%; }
 .modal-image-wrap { flex: 1; display: flex; align-items: center; justify-content: center; background: #000; }
 .modal-image-wrap img { max-width: 100%; max-height: 100%; object-fit: contain; }
-.modal-side { width: 360px; background: var(--panel); padding: 16px; overflow-y: auto; border-left: 1px solid var(--border); }
+.modal-side { width: 480px; background: var(--panel); padding: 20px; overflow-y: auto; border-left: 1px solid var(--border); }
+@media (max-width: 1280px) { .modal-side { width: 400px; } }
+@media (max-width: 1024px) { .modal-side { width: 340px; } }
 .modal-side h2 { font-size: 14px; margin: 0 0 12px; word-break: break-all; font-family: ui-monospace, SFMono-Regular, monospace; }
 .close { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.6); color: var(--fg); border: none; font-size: 24px; width: 36px; height: 36px; border-radius: 18px; cursor: pointer; z-index: 1; }
 

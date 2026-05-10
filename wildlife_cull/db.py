@@ -177,8 +177,8 @@ def finalize_image_if_complete(
 
     artistic = [d["result"].get("artistic_score") for d in done if isinstance(d["result"].get("artistic_score"), (int, float))]
     portfolio = [d["result"].get("portfolio_potential") for d in done if isinstance(d["result"].get("portfolio_potential"), (int, float))]
-    avg_a = round(sum(artistic) / len(artistic)) if artistic else None
-    avg_p = round(sum(portfolio) / len(portfolio)) if portfolio else None
+    avg_a = round(sum(artistic) / len(artistic), 1) if artistic else None
+    avg_p = round(sum(portfolio) / len(portfolio), 1) if portfolio else None
 
     primary = next((judges[n]["result"] for n in judge_names if judges[n]["status"] == "done" and n == judge_names[0]), None)
     if primary is None:

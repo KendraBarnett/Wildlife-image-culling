@@ -80,7 +80,7 @@ This installs:
 
 Wait until it finishes (a few minutes).
 
-## Step 4 — Start Ollama and download the three vision models
+## Step 4 — Start Ollama and download the two vision models
 
 Start the Ollama background service:
 
@@ -88,34 +88,31 @@ Start the Ollama background service:
 brew services start ollama
 ```
 
-The app uses **three different vision models** so it can score each photo from
-three different perspectives (a "judges" panel — Editor / NatGeo / Stock).
+The app uses **two different vision models** so it can score each photo from
+two different perspectives (a "judges" panel — NatGeo / Stock).
 Each judge has its own model and persona, and the app combines their scores.
 You only download these once.
 
-Total download: about **18 GB**. Plan on 30–60 minutes depending on your
-internet speed. Run all three in the same Terminal window — each one will
+Total download: about **13 GB**. Plan on 20–40 minutes depending on your
+internet speed. Run both in the same Terminal window — each one will
 print a progress bar:
 
 ```
-ollama pull qwen2.5vl:7b
 ollama pull llama3.2-vision:11b
 ollama pull minicpm-v
 ```
 
 What each one is for:
 
-- **`qwen2.5vl:7b`** (~5 GB) — the **Editor** judge. Harsh technical critic:
-  focus, light, composition, exposure.
 - **`llama3.2-vision:11b`** (~8 GB) — the **NatGeo** judge. Story-driven:
-  behavior, conservation context, sense of place, rarity.
+  behavior, conservation context, sense of place, rarity, authenticity.
 - **`minicpm-v`** (~5 GB) — the **Stock** judge. Commercial appeal: clean
   isolation, broad marketability, room for layout.
 
-When all three are done, sanity-check that the first one works:
+When both are done, sanity-check that one works:
 
 ```
-ollama run qwen2.5vl:7b "Say hello in one word."
+ollama run llama3.2-vision:11b "Say hello in one word."
 ```
 
 You should see a one-word reply. Press **Control + D** to exit. If you got a
@@ -128,9 +125,10 @@ reply, Ollama is healthy and the models are loaded.
 
 > **About RAM:** your Mac mini has 16 GB and each of these models is 5–8 GB.
 > Only **one** model is loaded into RAM at a time; the app processes all your
-> photos with the Editor first, then swaps to NatGeo and processes them all
-> again, then Stock. This is why analysis takes a while — it's three passes,
-> not three parallel runs. You leave it running.
+> photos with NatGeo first, then swaps to Stock and processes them all again.
+> This is why analysis takes a while — it's two sequential passes, not two
+> parallel runs. You leave it running. As soon as NatGeo finishes a photo
+> you'll see its scores fill in even before Stock has its turn.
 
 ## Step 5 — Download the project from GitHub onto the Mac mini
 

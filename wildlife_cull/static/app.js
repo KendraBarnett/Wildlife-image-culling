@@ -82,7 +82,15 @@ async function refreshFolders() {
 
 async function refreshStats() {
   const s = await jget("/api/stats");
-  $("#stats").textContent = `${s.total || 0} total · ${s.analyzed || 0} analyzed · ${s.pending || 0} pending · ${s.rated || 0} rated`;
+  const parts = [
+    `${s.total || 0} total`,
+    `${s.analyzed || 0} fully analyzed`,
+  ];
+  if (s.partial) parts.push(`${s.partial} partial`);
+  parts.push(`${(s.pending || 0) - (s.partial || 0)} pending`);
+  if (s.errored) parts.push(`${s.errored} errored`);
+  parts.push(`${s.rated || 0} rated`);
+  $("#stats").textContent = parts.join(" · ");
 }
 
 async function selectFolder(folder) {
@@ -198,8 +206,13 @@ function renderCard(img) {
   overlay.appendChild(stars);
   const scores = document.createElement("span");
   scores.className = "scores";
-  if (img.ai_status === "done") {
-    scores.textContent = `art ${img.ai_artistic_score || "?"} · port ${img.ai_portfolio_score || "?"}`;
+  const judgesDone = img.judges_done || 0;
+  const judgesTotal = img.judges_total || 0;
+  if (img.ai_status === "done" || judgesDone > 0) {
+    const a = partialAvg(img, "artistic_score") ?? img.ai_artistic_score;
+    const p = partialAvg(img, "portfolio_potential") ?? img.ai_portfolio_score;
+    const stamp = (judgesTotal && judgesDone < judgesTotal) ? ` (${judgesDone}/${judgesTotal})` : "";
+    scores.textContent = `art ${formatScore(a)} · port ${formatScore(p)}${stamp}`;
   } else if (img.ai_status === "pending") {
     scores.textContent = "analyzing…";
   } else if (img.ai_status === "error") {
@@ -294,9 +307,11 @@ function renderJudgeCard(judge, slot) {
   }
   const r = slot.result || {};
   const notes = r.notes ? `<div class="judge-notes">${esc(r.notes)}</div>` : "";
+  const art = r.artistic_score ?? "?";
+  const port = r.portfolio_potential ?? "?";
   return `<div class="judge-card done">
     <div class="judge-name">${esc(judge.label)}</div>
-    <div class="judge-scores"><span class="score">Art <b>${r.artistic_score ?? "?"}</b></span><span class="score">Port <b>${r.portfolio_potential ?? "?"}</b></span></div>
+    <div class="judge-scores"><span class="score">Art <b>${art}</b><span class="denom">/10</span></span><span class="score">Port <b>${port}</b><span class="denom">/10</span></span></div>
     ${notes}
     <div class="judge-model">${esc(judge.model)}</div>
   </div>`;
@@ -310,6 +325,26 @@ function esc(s) {
 function pretty(s) {
   if (s === null || s === undefined || s === "") return "";
   return String(s).replace(/_/g, " ").replace(/\b([a-z])/g, (_, c) => c.toUpperCase());
+}
+
+function formatScore(v) {
+  if (v === null || v === undefined || v === "") return "?";
+  const n = Number(v);
+  if (Number.isNaN(n)) return "?";
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
+function partialAvg(img, field) {
+  const judges = img.ai_judges || {};
+  const vals = [];
+  for (const slot of Object.values(judges)) {
+    if (slot && slot.status === "done" && slot.result) {
+      const v = slot.result[field];
+      if (typeof v === "number") vals.push(v);
+    }
+  }
+  if (!vals.length) return null;
+  return Math.round((vals.reduce((s, n) => s + n, 0) / vals.length) * 10) / 10;
 }
 
 function setStars(v) {

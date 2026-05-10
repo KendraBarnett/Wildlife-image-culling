@@ -29,8 +29,8 @@ pick values STRICTLY from the listed options for every enum field:
   "lighting": <PICK EXACTLY ONE: "harsh" | "soft" | "golden" | "low_light" | "backlit" | "overcast" | "mixed">,
   "is_silhouette": true | false,
   "technical_issues": [<zero or more, each ONE OF: "out_of_focus","camera_shake","clipped_subject","blown_highlights","heavy_noise","obstructed">],
-  "artistic_score": <integer 1-10>,
-  "portfolio_potential": <integer 1-10>,
+  "artistic_score": <number 1.0-10.0, ONE decimal place, e.g. 4.3 or 7.1>,
+  "portfolio_potential": <number 1.0-10.0, ONE decimal place, e.g. 5.7 or 8.2>,
   "notes": "<one short sentence, optional>"
 }
 
@@ -49,33 +49,55 @@ If a flaw cannot be removed by a basic edit, score the image AS IF the flaw stay
 Do not give credit for "could be saved with work." Score what will actually leave the camera bag."""
 
 
-EDITOR_PROMPT = f"""You are a HARSH professional photo editor culling wildlife photographs for portfolio \
-and publication. Your scoring decides what a working pro would actually present to a magazine \
-editor or stock client. Be conservative, demanding, and honest. Most frames in any shoot are \
-forgettable; say so.
+_BASELINE_RUBRIC = """SCORING APPROACH — be HARSH and DISCRIMINATING.
 
-{_SHIPPED_AS_IS}
+The default verdict for any wildlife photo is "filler — not interesting." \
+Most working photographers' shoots are 90% filler; say so. You must EARN \
+points up from a base of 3 for unremarkable images. Do not start in the \
+middle and adjust slightly — start LOW and add points for what makes a \
+photo actually work.
 
-{_SHARED_SCHEMA}
+START EVERY IMAGE AT artistic_score = 3. Then:
 
-SCORING RUBRIC — apply it strictly. The default is mediocre.
-- 1-2: Technically broken. Reject. (Severe blur, clipped subject, obstructed, unrecoverable highlights.)
-- 3-4: Technically passable but unremarkable. Common pose, weak/flat light, redundant within a burst, mundane subject. THIS IS THE MOST COMMON BAND.
-- 5: Average competent shot. Eye reasonably sharp, light okay, but nothing distinctive.
-- 6: Good shot. Slightly above average — nice light OR interesting behavior OR clean composition. Worth keeping.
-- 7: Strong shot. Clean light AND distinctive moment/composition. Portfolio candidate.
-- 8: Excellent. Story, behavior, or rare beauty. A pro would print this. Rare in any shoot.
-- 9: Exceptional. Would headline a series.
-- 10: Once-a-year shot. Magazine cover material. Almost never give this.
+ADD +1 each (max +7) for any of these that genuinely apply:
+- Eye is decisively sharp on the actual eye (not just "the bird is in focus")
+- Light is doing something interesting (golden, dramatic side-light, rim, atmosphere, mood)
+- Genuine behavior is happening (calling, eating, flight, interaction, hunting, courtship)
+- Composition is deliberate and works (intentional negative space, leading lines, frame-within-frame, off-center balance that's clearly chosen)
+- Moment is unusual or rare for the species
+- Image makes a viewer pause — a strong response of any kind
+- Would hold up next to working pros' published work
 
-HARD CAPS (apply aggressively):
-- Blown highlights losing detail in subject: cap artistic_score at 5.
-- Mundane pose (perched / sitting / camera-aware) with no behavior or special light: cap at 6.
-- Cluttered or distracting background: cap at 6.
-- Soft or missed eye focus on a static subject in good light: cap at 5.
-- Visible zoo / captive context (enclosure cues, glass, fences): cap at 6.
+SUBTRACT -1 each for any of these:
+- Blown highlights touch the subject and lose feather/fur detail
+- Eye is soft, missed, or not visible on a static animal
+- Camera-aware "looking at the lens" pose with no other interest
+- Cluttered or distracting background you can't crop out
+- Visible captive cues (enclosure walls, glass, fences, name placards)
+- Redundant within a burst (this is one of many similar frames)
+- Common species in a common pose with no special light or story
 
-portfolio_potential = artistic_score adjusted for marketability and uniqueness given AS-IS shipping. It should be EQUAL TO or LOWER than artistic_score, never meaningfully higher."""
+Final artistic_score = 3 + bonuses − penalties, with finer-grained decimals \
+where useful (e.g. 4.3 if "barely above filler with one weak strength", 6.7 \
+if "good and creeping toward strong"). Use ONE decimal place. Clamp to 1.0–10.0.
+
+portfolio_potential answers a DIFFERENT question: "Would this be chosen over \
+similar work?" It MUST often differ from artistic_score. A technically strong \
+but generic shot has high artistic_score but lower portfolio_potential (too \
+much competition). A flawed but rare moment can have a lower artistic_score \
+yet higher portfolio_potential. If you find yourself writing the same number \
+for both, reconsider — what would make a buyer choose this over the next \
+photographer's frame?
+
+Calibration anchors:
+- 3 = filler. The base. Most images.
+- 4 = barely above filler. One small thing going for it.
+- 5 = competent average. Stock-grade at best.
+- 6 = good. Worth keeping.
+- 7 = strong. Portfolio candidate.
+- 8 = excellent. Rare in any shoot.
+- 9 = exceptional. Headline image.
+- 10 = once-a-year. Almost never give this."""
 
 
 NATGEO_PROMPT = f"""You are a senior National Geographic photo editor evaluating a wildlife image \
@@ -88,21 +110,13 @@ animal in mundane light is editorial filler — score it as such.
 
 {_SHARED_SCHEMA}
 
-NATGEO SCORING RUBRIC:
-- 1-3: Filler. Common subject, no story, generic pose, or captive context. Editorial cannot use.
-- 4-5: Competent but ordinary. Could appear as a small inset; not a hero image.
-- 6: Has one clear strength — behavior, place, or moment — but is not yet editorial-strong.
-- 7: Editorial candidate. Tells a piece of a story. Could run as a supporting image.
-- 8: Strong editorial. Hero image for a feature; behavior or moment is unmistakable.
-- 9: Cover-tier. Distinct narrative authority.
-- 10: Once-a-decade. Almost never give this.
+{_BASELINE_RUBRIC}
 
-HARD CAPS:
-- Visible zoo / captive cues at all (enclosure, glass, fence, name placard): cap artistic_score at 5 and portfolio_potential at 4.
-- No behavior, no environment, animal alone against blur: cap at 6.
-- Excellent technique but generic species in generic pose: cap at 6.
-
-portfolio_potential here = "would I license this for a NatGeo feature?" Be ruthless. Most images do not survive."""
+NATGEO-SPECIFIC weights when scoring:
+- Behavior, environment, and rarity matter MOST. A clean technical portrait without those is filler (artistic_score around 3-5).
+- Authenticity matters. Visible captive cues (enclosure, glass, fence, name placard) cap artistic_score at 5 and portfolio_potential at 4.
+- "Would this run in a NatGeo feature?" is the portfolio_potential question. Most images do not survive.
+- A flawed but unique behavior moment (e.g. predation, courtship, rare species) can score higher than a clean studio-style portrait."""
 
 
 STOCK_PROMPT = f"""You are a senior stock-photo buyer evaluating broad commercial licensing potential. \
@@ -115,21 +129,14 @@ license well; score them down even if they are artistically strong.
 
 {_SHARED_SCHEMA}
 
-STOCK SCORING RUBRIC:
-- 1-3: Unlicensable. Technical flaws, awkward pose, or no clear use case.
-- 4-5: Below-average commercial appeal. Niche or competing with abundant existing stock.
-- 6: Decent commercial fit. Clean subject, usable, but unremarkable in a crowded market.
-- 7: Strong stock candidate. Clean isolation, appealing pose, room for layout.
-- 8: Excellent commercial appeal. Multi-use, evergreen.
-- 9: Top-shelf stock. Goes on covers and ads.
-- 10: Almost never give this.
+{_BASELINE_RUBRIC}
 
-HARD CAPS:
-- Cluttered background / no room for layout text: cap at 6.
-- Subject that is visually challenging for general audiences (e.g. spiders, snakes, gore): cap at 6.
-- Visible zoo cues are NOT necessarily a problem here (stock buyers don't care), but cap at 7 since editorial outlets won't use it.
-
-portfolio_potential here = "broad licensing appeal" specifically — not artistic value."""
+STOCK-SPECIFIC weights when scoring:
+- Clean isolation and clear subject matter most. A clean shot of a common animal can score well here even if NatGeo would reject it.
+- Visible zoo cues are NOT necessarily disqualifying for stock, but cap artistic_score at 7 since editorial outlets won't use it.
+- Cluttered background / no room for text overlay: cap artistic_score at 6.
+- Subjects that are visually challenging for broad audiences (gore, large spiders, snakes in striking poses): cap artistic_score at 6.
+- portfolio_potential here = "broad licensing appeal" — not artistic value. A boring but clean cardinal portrait may have higher portfolio_potential than a stunning predation shot, because licensing buyers want safe, generic, repeatable subjects."""
 
 
 # Single source of truth for the controlled vocab. The server exposes this
@@ -154,20 +161,12 @@ AI_VOCAB = {
 # image.
 JUDGES = [
     {
-        "name": "editor",
-        "label": "Editor",
-        "model": "qwen2.5vl:7b",
-        "prompt": EDITOR_PROMPT,
-        "weight": 1.0,
-        "primary": True,  # this judge's structured fields populate the searchable columns
-    },
-    {
         "name": "natgeo",
         "label": "NatGeo",
         "model": "llama3.2-vision:11b",
         "prompt": NATGEO_PROMPT,
         "weight": 1.0,
-        "primary": False,
+        "primary": True,  # this judge's structured fields populate the searchable columns
     },
     {
         "name": "stock",

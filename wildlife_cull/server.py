@@ -225,7 +225,7 @@ def api_images(
         "ai_status, ai_artistic_score, ai_portfolio_score, "
         "ai_eye_focus, ai_motion, ai_composition, ai_lighting, "
         "ai_is_silhouette, ai_subject, ai_animal_type, ai_species, "
-        "ai_technical_issues, "
+        "ai_technical_issues, ai_judges_json, "
         "user_rating, user_tags, user_notes "
         f"FROM images {where_sql} ORDER BY filename LIMIT ? OFFSET ?"
     )
@@ -249,6 +249,16 @@ def api_images(
                 d["ai_technical_issues"] = []
         else:
             d["ai_technical_issues"] = []
+        judges = {}
+        if d.get("ai_judges_json"):
+            try:
+                judges = json.loads(d["ai_judges_json"])
+            except Exception:
+                judges = {}
+        d["ai_judges"] = judges
+        d["judges_done"] = sum(1 for v in judges.values() if isinstance(v, dict) and v.get("status") == "done")
+        d["judges_total"] = len(ai.JUDGES)
+        d.pop("ai_judges_json", None)
         items.append(d)
     return {"images": items, "count": len(items)}
 
@@ -390,6 +400,7 @@ def api_stats() -> dict:
                 SUM(CASE WHEN ai_status='done' THEN 1 ELSE 0 END) AS analyzed,
                 SUM(CASE WHEN ai_status='pending' THEN 1 ELSE 0 END) AS pending,
                 SUM(CASE WHEN ai_status='error' THEN 1 ELSE 0 END) AS errored,
+                SUM(CASE WHEN ai_status='pending' AND ai_judges_json IS NOT NULL AND ai_judges_json != '' AND ai_judges_json != '{}' THEN 1 ELSE 0 END) AS partial,
                 SUM(CASE WHEN user_rating IS NOT NULL THEN 1 ELSE 0 END) AS rated,
                 SUM(CASE WHEN embedding IS NOT NULL THEN 1 ELSE 0 END) AS embedded
             FROM images"""
