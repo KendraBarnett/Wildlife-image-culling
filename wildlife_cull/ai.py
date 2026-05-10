@@ -223,6 +223,40 @@ AI_VOCAB = {
 }
 
 
+# Ollama JSON Schema mode — passing this as `format` (instead of the
+# string "json") forces the model to emit a value for EVERY required
+# field. This fixes the lazy-output failure where the model returned
+# only {"keep":"no","technical_issues":[...]} and skipped subject /
+# species / type / notes etc. With required fields enforced server-side,
+# the model has to actually fill them in.
+TRIAGE_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "subject", "animal_type", "species",
+        "in_focus", "eye_focus", "motion", "composition", "lighting",
+        "is_silhouette", "technical_issues", "keep", "notes",
+    ],
+    "properties": {
+        "subject": {"type": "string", "minLength": 3},
+        "animal_type": {"type": "string", "enum": AI_VOCAB["animal_type"]},
+        "species": {"type": "string", "minLength": 3},
+        "in_focus": {"type": "string", "enum": AI_VOCAB["in_focus"]},
+        "eye_focus": {"type": "string", "enum": AI_VOCAB["eye_focus"]},
+        "motion": {"type": "string", "enum": AI_VOCAB["motion"]},
+        "composition": {"type": "string", "enum": AI_VOCAB["composition"]},
+        "lighting": {"type": "string", "enum": AI_VOCAB["lighting"]},
+        "is_silhouette": {"type": "boolean"},
+        "technical_issues": {
+            "type": "array",
+            "items": {"type": "string", "enum": AI_VOCAB["technical_issues"]},
+        },
+        "keep": {"type": "string", "enum": AI_VOCAB["keep"]},
+        "notes": {"type": "string", "minLength": 30},
+    },
+}
+
+
 # Each judge: a persona-specific prompt run against a specific Ollama model.
 # Defaults below are tuned for a 16 GB Apple Silicon Mac mini. The worker
 # processes one judge across all pending images before switching, so the
@@ -356,7 +390,11 @@ def analyze_with_judge(
         "prompt": full_prompt,
         "images": [image_b64],
         "stream": True,
-        "format": "json",
+        # Full JSON Schema (not just "json") forces every required field
+        # to appear in the output. Without this, the model returns
+        # minimal {"keep":"no","technical_issues":[...]} and skips the
+        # other fields entirely.
+        "format": TRIAGE_OUTPUT_SCHEMA,
         "keep_alive": "30m",
         "options": {"temperature": 0.2},
     }
