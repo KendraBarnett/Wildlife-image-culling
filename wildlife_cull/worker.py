@@ -22,6 +22,7 @@ class BackgroundWorker:
         # per pass instead of three times per image.
         self._current_judge_idx = 0
         self._warmed_judge: str | None = None
+        self.last_timing: dict | None = None
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -134,10 +135,22 @@ class BackgroundWorker:
             feedback_rows = db.list_feedback_examples(conn, limit=10)
         examples_block = ai.format_feedback_block(feedback_rows, max_examples=5)
         try:
-            parsed, raw = ai.analyze_with_judge(
+            parsed, raw, timing = ai.analyze_with_judge(
                 judge,
                 Path(row["preview_path"]),
                 examples_block=examples_block,
+            )
+            self.last_timing = {
+                "filename": row["filename"],
+                "judge": judge["name"],
+                **timing,
+            }
+            _log(
+                f"{judge['name']} done in {timing['total_secs']}s for {row['filename']} "
+                f"(encode={timing['image_encode_secs']}s, "
+                f"prompt_eval={timing.get('prompt_eval_secs')}s/{timing.get('prompt_eval_count')}tok, "
+                f"gen={timing.get('eval_secs')}s/{timing.get('eval_count')}tok, "
+                f"prompt_chars={timing['prompt_chars']} feedback_chars={timing['examples_chars']})"
             )
             with db.connect() as conn:
                 db.set_judge_result(

@@ -49,6 +49,7 @@ def health() -> dict:
         "current_judge": worker.current_judge,
         "worker_last_error": worker.last_error,
         "worker_paused": worker.paused,
+        "worker_last_timing": worker.last_timing,
         "feedback_corrections": fb_count,
         "feedback_active": min(fb_count, 5),
     }

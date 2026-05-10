@@ -304,14 +304,17 @@ def analyze_with_judge(
     examples_block: str = "",
     idle_timeout: float = 300.0,
     total_timeout: float = 900.0,
-) -> tuple[dict, str]:
+) -> tuple[dict, str, dict]:
     if not preview_path.exists():
         raise FileNotFoundError(f"Preview missing: {preview_path}")
     full_prompt = (examples_block + judge["prompt"]) if examples_block else judge["prompt"]
+    encode_start = time.time()
+    image_b64 = _read_b64(preview_path)
+    encode_secs = time.time() - encode_start
     payload = {
         "model": judge["model"],
         "prompt": full_prompt,
-        "images": [_read_b64(preview_path)],
+        "images": [image_b64],
         "stream": True,
         "format": "json",
         "keep_alive": "30m",
@@ -320,7 +323,9 @@ def analyze_with_judge(
     timeout = httpx.Timeout(connect=10.0, read=idle_timeout, write=30.0, pool=10.0)
     chunks: list[str] = []
     started = time.time()
+    first_token_ts: Optional[float] = None
     last_error: Optional[str] = None
+    final_evt: dict = {}
     try:
         with httpx.Client(timeout=timeout) as client:
             with client.stream("POST", f"{OLLAMA_HOST}/api/generate", json=payload) as r:
@@ -341,8 +346,11 @@ def analyze_with_judge(
                         break
                     chunk = evt.get("response", "")
                     if chunk:
+                        if first_token_ts is None:
+                            first_token_ts = time.time()
                         chunks.append(chunk)
                     if evt.get("done"):
+                        final_evt = evt
                         break
     except httpx.RequestError as exc:
         raise RuntimeError(f"Cannot reach Ollama at {OLLAMA_HOST}: {exc}") from exc
@@ -355,11 +363,25 @@ def analyze_with_judge(
             f"(model {judge['model']} may have failed to load or run out of memory)"
         )
     parsed = _parse_json_loose(text)
-    return parsed, text
+    total_secs = time.time() - encode_start
+    ns = 1_000_000_000.0
+    timing = {
+        "total_secs": round(total_secs, 2),
+        "image_encode_secs": round(encode_secs, 2),
+        "time_to_first_token_secs": round((first_token_ts - started), 2) if first_token_ts else None,
+        "prompt_eval_count": final_evt.get("prompt_eval_count"),
+        "prompt_eval_secs": round(final_evt["prompt_eval_duration"] / ns, 2) if final_evt.get("prompt_eval_duration") else None,
+        "eval_count": final_evt.get("eval_count"),
+        "eval_secs": round(final_evt["eval_duration"] / ns, 2) if final_evt.get("eval_duration") else None,
+        "load_secs": round(final_evt["load_duration"] / ns, 2) if final_evt.get("load_duration") else None,
+        "prompt_chars": len(full_prompt),
+        "examples_chars": len(examples_block),
+    }
+    return parsed, text, timing
 
 
 # Back-compat alias for any caller still using the single-judge name.
-def analyze_image(preview_path: Path, **kwargs) -> tuple[dict, str]:
+def analyze_image(preview_path: Path, **kwargs) -> tuple[dict, str, dict]:
     return analyze_with_judge(primary_judge(), preview_path, **kwargs)
 
 

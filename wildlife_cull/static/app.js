@@ -37,7 +37,11 @@ async function refreshHealth() {
       const trained = h.feedback_active
         ? ` · trained on ${h.feedback_active} of your corrections`
         : (h.feedback_corrections === 0 ? " · no corrections yet" : "");
-      el.textContent = `ready · ${h.vision_model}${trained}`;
+      const t = h.worker_last_timing;
+      const timing = t
+        ? ` · last: ${t.total_secs}s (enc ${t.image_encode_secs}s, prompt ${t.prompt_eval_secs ?? "?"}s, gen ${t.eval_secs ?? "?"}s)`
+        : "";
+      el.textContent = `ready · ${h.vision_model}${trained}${timing}`;
       el.className = "health ok";
     } else {
       el.textContent = h.ollama_issue || "issue";
