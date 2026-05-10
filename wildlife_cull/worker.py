@@ -5,10 +5,17 @@ import traceback
 from pathlib import Path
 
 from . import db, ai
+from .config import DATA_DIR
 
 
 def _log(message: str) -> None:
     print(f"[wc-worker] {message}", file=sys.stderr, flush=True)
+
+
+# A tiny sentinel file that survives restarts. If it exists when the
+# worker starts, we boot in paused state. Pause writes it, resume
+# removes it. No schema migration, no DB row needed.
+PAUSE_FLAG = Path(DATA_DIR) / ".worker_paused"
 
 
 class BackgroundWorker:
@@ -18,11 +25,16 @@ class BackgroundWorker:
         self._thread: threading.Thread | None = None
         self.last_error: str | None = None
         # Per-image mode: finish one image fully (every judge in turn)
-        # before moving to the next. Both judges share qwen2.5vl:7b so
-        # there's no model-swap penalty to interleaving them.
+        # before moving to the next.
         self._warmed_model: str | None = None
         self.last_timing: dict | None = None
         self.in_flight: dict | None = None
+
+        # Restore paused state from the sentinel file on construction so
+        # restarting the app respects the last pause you set.
+        if PAUSE_FLAG.exists():
+            self._pause.set()
+            _log("starting in paused state (.worker_paused flag found)")
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -30,7 +42,10 @@ class BackgroundWorker:
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, name="wc-worker", daemon=True)
         self._thread.start()
-        _log("background worker started")
+        if self._pause.is_set():
+            _log("background worker started (paused)")
+        else:
+            _log("background worker started")
 
     def stop(self) -> None:
         self._stop.set()
@@ -38,11 +53,19 @@ class BackgroundWorker:
     def pause(self) -> None:
         if not self._pause.is_set():
             self._pause.set()
-            _log("paused")
+            try:
+                PAUSE_FLAG.touch()
+            except OSError as exc:
+                _log(f"could not write pause sentinel: {exc}")
+            _log("paused (persisted)")
 
     def resume(self) -> None:
         if self._pause.is_set():
             self._pause.clear()
+            try:
+                PAUSE_FLAG.unlink(missing_ok=True)
+            except OSError as exc:
+                _log(f"could not remove pause sentinel: {exc}")
             _log("resumed")
 
     @property
