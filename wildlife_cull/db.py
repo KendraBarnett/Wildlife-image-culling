@@ -71,7 +71,10 @@ CREATE TABLE IF NOT EXISTS folders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     path TEXT UNIQUE NOT NULL,
     ingested_at REAL NOT NULL,
-    image_count INTEGER NOT NULL DEFAULT 0
+    image_count INTEGER NOT NULL DEFAULT 0,
+    paused INTEGER NOT NULL DEFAULT 0,
+    last_seen_at REAL,
+    last_online INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS claude_usage (
@@ -125,6 +128,16 @@ def _migrate(conn: sqlite3.Connection) -> None:
         ("claude_cost_usd", "ALTER TABLE images ADD COLUMN claude_cost_usd REAL"),
     ]:
         if name not in cols:
+            conn.execute(ddl)
+
+    # folders table: per-folder pause + offline tracking columns.
+    fcols = {r["name"] for r in conn.execute("PRAGMA table_info(folders)").fetchall()}
+    for name, ddl in [
+        ("paused", "ALTER TABLE folders ADD COLUMN paused INTEGER NOT NULL DEFAULT 0"),
+        ("last_seen_at", "ALTER TABLE folders ADD COLUMN last_seen_at REAL"),
+        ("last_online", "ALTER TABLE folders ADD COLUMN last_online INTEGER NOT NULL DEFAULT 1"),
+    ]:
+        if name not in fcols:
             conn.execute(ddl)
 
     # Wipe the legacy artistic/portfolio score columns. SQLite 3.35+ supports
@@ -311,14 +324,22 @@ def list_pending_for_judge(
 def next_pending_image_and_judge(
     conn: sqlite3.Connection,
     judge_names: list[str],
+    focused_folder: Optional[str] = None,
 ) -> Optional[tuple[str, sqlite3.Row]]:
-    """Per-image mode: walk images in filename order (matches the UI's
-    default grid sort, so analysis fills in left-to-right, top-to-bottom)
-    and return the first (judge_name, image) pair where that judge has not
-    yet reached a terminal status (done/error)."""
+    """Walk pending images in priority order: (1) currently-focused
+    folder first, (2) filename order within each folder. Skip images
+    whose folder is paused or offline. Returns (judge_name, row) for the
+    first incomplete judge on the chosen image."""
     rows = conn.execute(
-        "SELECT * FROM images WHERE ai_status NOT IN ('cancelled') "
-        "ORDER BY filename, id"
+        "SELECT i.* FROM images i "
+        "LEFT JOIN folders f ON f.path = i.folder "
+        "WHERE i.ai_status NOT IN ('cancelled', 'unreachable') "
+        "AND COALESCE(f.paused, 0) = 0 "
+        "AND COALESCE(f.last_online, 1) = 1 "
+        "ORDER BY "
+        "  CASE WHEN i.folder = ? THEN 0 ELSE 1 END, "
+        "  i.filename, i.id",
+        (focused_folder or "",),
     ).fetchall()
     for r in rows:
         data = {}
@@ -514,7 +535,64 @@ def folder_summary(conn: sqlite3.Connection, folder: str) -> dict:
 
 
 def list_folders(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Per-folder summary used by the UI tab strip. Joins with the
+    folders table for paused / last_online state — those are LEFT
+    JOINed so folders that exist only in images (legacy) still show."""
     return conn.execute(
-        "SELECT folder, COUNT(*) AS n, MAX(ingested_at) AS last "
-        "FROM images GROUP BY folder ORDER BY last DESC"
+        "SELECT i.folder AS folder, "
+        "COUNT(*) AS n, "
+        "MAX(i.ingested_at) AS last, "
+        "COALESCE(f.paused, 0) AS paused, "
+        "COALESCE(f.last_online, 1) AS last_online, "
+        "f.last_seen_at AS last_seen_at "
+        "FROM images i "
+        "LEFT JOIN folders f ON f.path = i.folder "
+        "GROUP BY i.folder "
+        "ORDER BY last DESC"
     ).fetchall()
+
+
+def set_folder_paused(conn: sqlite3.Connection, folder: str, paused: bool) -> None:
+    """Set the paused flag for a folder. Creates the row in folders if
+    missing so older ingests (which only wrote to images) get a state
+    record on first pause."""
+    conn.execute(
+        "INSERT INTO folders (path, ingested_at, image_count, paused, last_online) "
+        "VALUES (?, ?, 0, ?, 1) "
+        "ON CONFLICT(path) DO UPDATE SET paused=excluded.paused",
+        (folder, time.time(), 1 if paused else 0),
+    )
+
+
+def folder_pause_state(conn: sqlite3.Connection, folder: str) -> bool:
+    row = conn.execute(
+        "SELECT paused FROM folders WHERE path=?", (folder,)
+    ).fetchone()
+    return bool(row["paused"]) if row else False
+
+
+def update_folder_online(conn: sqlite3.Connection, folder: str, online: bool) -> None:
+    """Stamp a folder's last_seen_at + last_online based on a filesystem
+    probe. Probe results drive the (offline) badge in the UI; the worker
+    uses them to skip unreachable images."""
+    conn.execute(
+        "INSERT INTO folders (path, ingested_at, image_count, last_online, last_seen_at) "
+        "VALUES (?, ?, 0, ?, ?) "
+        "ON CONFLICT(path) DO UPDATE SET last_online=excluded.last_online, "
+        "last_seen_at=excluded.last_seen_at",
+        (folder, time.time(), 1 if online else 0, time.time() if online else None),
+    )
+
+
+def list_paused_folders(conn: sqlite3.Connection) -> list[str]:
+    rows = conn.execute(
+        "SELECT path FROM folders WHERE paused=1"
+    ).fetchall()
+    return [r["path"] for r in rows]
+
+
+def list_offline_folders(conn: sqlite3.Connection) -> list[str]:
+    rows = conn.execute(
+        "SELECT path FROM folders WHERE last_online=0"
+    ).fetchall()
+    return [r["path"] for r in rows]

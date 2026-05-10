@@ -21,6 +21,14 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.init_db()
+    # Probe every known folder for filesystem reachability on startup.
+    # External drives that aren't plugged in will get last_online=0;
+    # the worker skips them and the UI shows an (offline) badge.
+    with db.connect() as conn:
+        for r in db.list_folders(conn):
+            db.update_folder_online(
+                conn, r["folder"], Path(r["folder"]).is_dir()
+            )
     worker.start()
     yield
     worker.stop()
@@ -709,21 +717,85 @@ def api_thumb(image_id: int):
 
 
 @app.get("/api/stats")
-def api_stats() -> dict:
+def api_stats(folder: Optional[str] = None) -> dict:
+    """When folder is set, scope counts to that folder. When omitted, the
+    counts roll up across every folder (the 'All' tab)."""
+    where = "WHERE folder=?" if folder else ""
+    params = (folder,) if folder else ()
     with db.connect() as conn:
         row = conn.execute(
-            """SELECT
+            f"""SELECT
                 COUNT(*) AS total,
                 SUM(CASE WHEN ai_status='done' THEN 1 ELSE 0 END) AS analyzed,
                 SUM(CASE WHEN ai_status='pending' THEN 1 ELSE 0 END) AS pending,
                 SUM(CASE WHEN ai_status='error' THEN 1 ELSE 0 END) AS errored,
-                SUM(CASE WHEN ai_status='pending' AND ai_judges_json IS NOT NULL AND ai_judges_json != '' AND ai_judges_json != '{}' THEN 1 ELSE 0 END) AS partial,
+                SUM(CASE WHEN ai_status='unreachable' THEN 1 ELSE 0 END) AS unreachable,
+                SUM(CASE WHEN ai_status='pending' AND ai_judges_json IS NOT NULL AND ai_judges_json != '' AND ai_judges_json != '{{}}' THEN 1 ELSE 0 END) AS partial,
                 SUM(CASE WHEN user_rating IS NOT NULL THEN 1 ELSE 0 END) AS rated,
                 SUM(CASE WHEN ai_feedback_json IS NOT NULL THEN 1 ELSE 0 END) AS feedback_count,
                 SUM(CASE WHEN embedding IS NOT NULL THEN 1 ELSE 0 END) AS embedded
-            FROM images"""
+            FROM images {where}""",
+            params,
         ).fetchone()
     return dict(row) if row else {}
+
+
+class FolderPauseReq(BaseModel):
+    folder: str
+    paused: bool
+
+
+@app.post("/api/folders/pause")
+def api_folder_pause(req: FolderPauseReq) -> dict:
+    """Toggle pause for one folder. Worker picks this up on its next
+    tick — within ~2 sec the folder stops accepting new analysis."""
+    with db.connect() as conn:
+        db.set_folder_paused(conn, req.folder, req.paused)
+    return {"ok": True, "folder": req.folder, "paused": req.paused}
+
+
+class FolderFocusReq(BaseModel):
+    folder: Optional[str] = None
+
+
+@app.post("/api/folders/focus")
+def api_folder_focus(req: FolderFocusReq) -> dict:
+    """The UI calls this when the user switches tabs. Worker uses the
+    focused folder as priority when picking the next image. Passing
+    None clears focus (use for the 'All' tab)."""
+    worker.focused_folder = req.folder or None
+    return {"ok": True, "focused_folder": worker.focused_folder}
+
+
+@app.post("/api/folders/recheck")
+def api_folders_recheck() -> dict:
+    """Probe every folder's filesystem path. Updates last_online so the
+    UI can drop the (offline) badge from folders whose drive is now
+    plugged back in (and add it to ones that just got unplugged).
+    Also resets ai_status='unreachable' rows in folders that came back
+    online so the worker tries them again."""
+    transitioned_online: list[str] = []
+    transitioned_offline: list[str] = []
+    with db.connect() as conn:
+        folders = [r["folder"] for r in db.list_folders(conn)]
+        for folder in folders:
+            online_before = not (folder in db.list_offline_folders(conn))
+            online_now = Path(folder).is_dir()
+            db.update_folder_online(conn, folder, online_now)
+            if online_now and not online_before:
+                transitioned_online.append(folder)
+                conn.execute(
+                    "UPDATE images SET ai_status='pending' "
+                    "WHERE folder=? AND ai_status='unreachable'",
+                    (folder,),
+                )
+            elif not online_now and online_before:
+                transitioned_offline.append(folder)
+    return {
+        "ok": True,
+        "online_again": transitioned_online,
+        "now_offline": transitioned_offline,
+    }
 
 
 def main() -> None:

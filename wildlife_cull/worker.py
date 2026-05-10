@@ -29,6 +29,9 @@ class BackgroundWorker:
         self._warmed_model: str | None = None
         self.last_timing: dict | None = None
         self.in_flight: dict | None = None
+        # The folder the UI is currently focused on. Worker prefers
+        # pending work in this folder before falling back to others.
+        self.focused_folder: str | None = None
 
         # Restore paused state from the sentinel file on construction so
         # restarting the app respects the last pause you set.
@@ -136,13 +139,36 @@ class BackgroundWorker:
 
         judge_names = [j["name"] for j in ai.JUDGES]
         with db.connect() as conn:
-            result = db.next_pending_image_and_judge(conn, judge_names)
+            result = db.next_pending_image_and_judge(
+                conn, judge_names, focused_folder=self.focused_folder,
+            )
         if not result:
             return False
         judge_name, row = result
         judge = ai.judge_by_name(judge_name)
         if judge is None:
             return False
+
+        # Reachability check: the preview should exist locally, and the
+        # original file should still be on disk. If either is missing
+        # (drive unplugged, file moved), mark the image as unreachable
+        # and the folder as offline, then continue with the next image.
+        preview_ok = bool(row["preview_path"]) and Path(row["preview_path"]).exists()
+        original_ok = bool(row["path"]) and Path(row["path"]).exists()
+        if not preview_ok or not original_ok:
+            _log(
+                f"unreachable: {row['filename']} "
+                f"(preview={preview_ok}, original={original_ok}) "
+                f"— marking folder {row['folder']} offline"
+            )
+            with db.connect() as conn:
+                conn.execute(
+                    "UPDATE images SET ai_status='unreachable' WHERE id=?",
+                    (row["id"],),
+                )
+                db.update_folder_online(conn, row["folder"], online=False)
+            return True
+
         self._ensure_warm(judge)
 
         ts = time.time()
