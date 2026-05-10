@@ -437,6 +437,43 @@ async function refreshPreviewStats() {
   } catch (e) { /* ignore */ }
 }
 
+async function openCompareModal() {
+  const ids = [...state.selected];
+  if (ids.length !== 2) {
+    alert(`Compare needs exactly 2 images selected — you have ${ids.length}.`);
+    return;
+  }
+  const m = $("#compare-modal");
+  m.classList.remove("hidden");
+  $("#compare-status").textContent = "Asking the local model…";
+  $("#compare-status").className = "muted";
+  $("#compare-result").classList.add("hidden");
+  $("#compare-result").innerHTML = "";
+  // Show both previews in the dual-image strip while we wait for the call.
+  for (const [idx, id] of ids.entries()) {
+    const img = $(`#compare-img-${idx + 1}`);
+    const lab = $(`#compare-label-${idx + 1}`);
+    const side = $(`#compare-side-${idx + 1}`);
+    side.classList.remove("winner", "loser");
+    img.src = `/api/preview/${id}`;
+    const meta = state.images.find((x) => x.id === id);
+    lab.textContent = `Image ${idx + 1} · ${meta ? meta.filename : id}`;
+  }
+  try {
+    const r = await jpost("/api/compare", { image_ids: ids });
+    const winnerSide = ids[0] === r.winner_id ? 1 : 2;
+    const loserSide = winnerSide === 1 ? 2 : 1;
+    $(`#compare-side-${winnerSide}`).classList.add("winner");
+    $(`#compare-side-${loserSide}`).classList.add("loser");
+    $("#compare-status").textContent = `Local model picked Image ${winnerSide} (${r.margin === "clear" ? "clear winner" : "close call"}) in ${r.elapsed_secs}s.`;
+    $("#compare-result").innerHTML = `<div class="compare-reason">${esc(r.reasoning)}</div>`;
+    $("#compare-result").classList.remove("hidden");
+  } catch (e) {
+    $("#compare-status").textContent = "Compare failed: " + e.message;
+    $("#compare-status").className = "fb-status bad";
+  }
+}
+
 function openBulkTagModal() {
   const ids = [...state.selected];
   if (!ids.length) return;
@@ -806,7 +843,7 @@ function setSelectMode(on) {
   $("#select-toggle").textContent = on ? "Exit select mode" : "Select…";
   $("#select-toggle").classList.toggle("danger", on);
   document.body.classList.toggle("select-mode", on);
-  for (const cls of ["select-info", "select-all-visible", "select-clear", "reanalyze-selected", "bulk-tag-selected"]) {
+  for (const cls of ["select-info", "select-all-visible", "select-clear", "reanalyze-selected", "bulk-tag-selected", "compare-selected"]) {
     const el = $("#" + cls);
     if (el) el.classList.toggle("hidden", !on);
   }
@@ -820,6 +857,14 @@ function updateSelectInfo() {
   $("#reanalyze-selected").disabled = n === 0;
   const bt = $("#bulk-tag-selected");
   if (bt) bt.disabled = n === 0;
+  const cmp = $("#compare-selected");
+  if (cmp) {
+    // Compare only makes sense with exactly two images selected.
+    cmp.disabled = n !== 2;
+    cmp.title = n === 2
+      ? "Compare these two with the local vision model"
+      : `Pick exactly 2 images to compare (you have ${n})`;
+  }
 }
 
 async function reanalyzeIds(ids) {
@@ -948,6 +993,8 @@ document.addEventListener("DOMContentLoaded", () => {
     reanalyzeIds(ids);
   };
   $("#bulk-tag-selected").onclick = () => openBulkTagModal();
+  $("#compare-selected").onclick = () => openCompareModal();
+  $("#compare-close").onclick = () => $("#compare-modal").classList.add("hidden");
   $("#bulk-tag-close").onclick = () => $("#bulk-tag-modal").classList.add("hidden");
   $("#bulk-tag-chips").onclick = (e) => {
     if (e.target.tagName !== "BUTTON") return;

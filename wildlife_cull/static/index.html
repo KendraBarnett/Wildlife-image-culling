@@ -148,6 +148,7 @@
     <button id="select-clear" class="secondary hidden">Clear selection</button>
     <button id="reanalyze-selected" class="hidden">Re-analyze selected</button>
     <button id="bulk-tag-selected" class="hidden">Tag selected</button>
+    <button id="compare-selected" class="hidden" title="Send two selected images to the local vision model and ask which is the better photo. Free — uses qwen2.5vl:7b.">Compare 2 with AI</button>
     <button id="reanalyze-errored" class="secondary">Re-analyze all errored</button>
     <span class="bulk-divider">|</span>
     <button id="score-keepers" title="Score every keeper not yet scored with Claude. Stops at the budget cap.">Score all keepers with Claude</button>
@@ -184,6 +185,25 @@
         <button id="bulk-tag-apply" class="primary">Apply to selected</button>
         <span id="bulk-tag-status" class="fb-status"></span>
       </div>
+    </div>
+  </div>
+
+  <div id="compare-modal" class="modal hidden">
+    <div class="modal-content compare-modal">
+      <button id="compare-close" class="close">&times;</button>
+      <h2>Compare with AI</h2>
+      <p id="compare-status" class="muted">Asking the local model…</p>
+      <div id="compare-pair" class="compare-pair">
+        <div class="compare-side" id="compare-side-1">
+          <img id="compare-img-1" />
+          <div class="compare-label" id="compare-label-1">Image 1</div>
+        </div>
+        <div class="compare-side" id="compare-side-2">
+          <img id="compare-img-2" />
+          <div class="compare-label" id="compare-label-2">Image 2</div>
+        </div>
+      </div>
+      <div id="compare-result" class="compare-result hidden"></div>
     </div>
   </div>
 

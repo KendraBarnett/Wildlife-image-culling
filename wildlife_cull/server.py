@@ -123,6 +123,54 @@ def api_refresh_sidecars() -> dict:
     }
 
 
+class CompareReq(BaseModel):
+    image_ids: list[int]
+
+
+@app.post("/api/compare")
+def api_compare(req: CompareReq) -> dict:
+    """Compare two images side-by-side with the local vision model.
+    Returns which is better and a short reason. Phase 1 cost (free,
+    local) — no Anthropic API call. Synchronous; usually 5–15 sec."""
+    if not req.image_ids or len(req.image_ids) != 2:
+        raise HTTPException(status_code=400, detail="Need exactly 2 image_ids")
+    if req.image_ids[0] == req.image_ids[1]:
+        raise HTTPException(status_code=400, detail="Pick two different images")
+    with db.connect() as conn:
+        rows = {
+            r["id"]: dict(r) for r in conn.execute(
+                "SELECT id, filename, preview_path FROM images WHERE id IN (?, ?)",
+                (req.image_ids[0], req.image_ids[1]),
+            ).fetchall()
+        }
+    if len(rows) != 2:
+        raise HTTPException(status_code=404, detail="One or both images not found")
+    img1 = rows[req.image_ids[0]]
+    img2 = rows[req.image_ids[1]]
+    if not img1.get("preview_path") or not img2.get("preview_path"):
+        raise HTTPException(status_code=409, detail="One or both images have no preview yet")
+    try:
+        parsed, raw, timing = ai.compare_two_images(
+            Path(img1["preview_path"]),
+            Path(img2["preview_path"]),
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}")
+    winner_index = parsed["winner"]
+    winner_id = req.image_ids[winner_index - 1]
+    loser_id = req.image_ids[2 - winner_index]
+    return {
+        "ok": True,
+        "winner_id": winner_id,
+        "loser_id": loser_id,
+        "winner_filename": rows[winner_id]["filename"],
+        "loser_filename": rows[loser_id]["filename"],
+        "reasoning": parsed.get("reasoning", ""),
+        "margin": parsed.get("margin", "close"),
+        "elapsed_secs": timing["total_secs"],
+    }
+
+
 class FolderPathReq(BaseModel):
     folder: str
 

@@ -97,6 +97,17 @@ body.select-mode .card:hover { outline: 2px solid var(--accent); }
 .scores.claude-scores { color: #d8b6ff; }
 .scores.paused { color: #f5c451; font-weight: 600; }
 .scores.offline { color: #ff8a8a; font-weight: 600; }
+.compare-modal { max-width: 1200px; width: 95vw; }
+.compare-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+.compare-side { position: relative; border: 2px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--panel-2); }
+.compare-side img { width: 100%; display: block; max-height: 60vh; object-fit: contain; background: #000; }
+.compare-side .compare-label { padding: 8px 12px; font-size: 12px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, monospace; border-top: 1px solid var(--border); }
+.compare-side.winner { border-color: #6fdb95; box-shadow: 0 0 20px rgba(111, 219, 149, 0.3); }
+.compare-side.winner .compare-label { background: rgba(80, 200, 120, 0.18); color: #6fdb95; font-weight: 700; }
+.compare-side.winner .compare-label::before { content: "★ WINNER · "; }
+.compare-side.loser { opacity: 0.7; }
+.compare-result { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px; }
+.compare-reason { font-size: 14px; line-height: 1.5; color: var(--fg); }
 .exif-block { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
 .exif-title { font-size: 10px; letter-spacing: 1px; color: var(--muted); margin-bottom: 6px; }
 .exif-settings { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 12px; }

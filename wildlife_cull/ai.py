@@ -390,6 +390,128 @@ def warmup_vision_model(timeout: float = 600.0) -> Optional[str]:
     return warmup_judge(primary_judge(), timeout=timeout)
 
 
+COMPARE_PROMPT = """You are a senior wildlife photo editor. The photographer has \
+selected TWO images for you to compare directly. The first image attached is "Image 1", \
+the second is "Image 2". Your job is to choose the better photo for keeping and explain \
+why in one or two sentences.
+
+Compare on:
+- Sharpness (especially the eye — that matters most)
+- Composition and framing
+- Behavior or moment captured
+- Light quality
+- Technical execution (exposure, noise, motion handling)
+
+If one image clearly wins, say so. If they're nearly identical, pick the one with the \
+sharper eye or stronger composition and acknowledge it was close.
+
+Reply with ONLY this JSON object, no prose, no markdown fences:
+
+{
+  "winner": <1 or 2>,
+  "reasoning": "<one or two sentences explaining the choice. Be specific about what you can see — name the eye state, the light, the moment, the flaw. Avoid vague phrases like 'better composition'.>",
+  "margin": <"clear" | "close">
+}
+"""
+
+
+def compare_two_images(
+    preview1_path: Path,
+    preview2_path: Path,
+    judge: Optional[dict] = None,
+    idle_timeout: float = 90.0,
+    total_timeout: float = 420.0,
+) -> tuple[dict, str, dict]:
+    """Send two images to the local vision model and ask which is the
+    better photograph. Returns (parsed, raw_text, timing) — same shape as
+    analyze_with_judge so existing log/watchdog plumbing applies."""
+    if not preview1_path.exists():
+        raise FileNotFoundError(f"Preview missing: {preview1_path}")
+    if not preview2_path.exists():
+        raise FileNotFoundError(f"Preview missing: {preview2_path}")
+
+    j = judge or primary_judge()
+    encode_start = time.time()
+    img1_b64 = _read_b64(preview1_path)
+    img2_b64 = _read_b64(preview2_path)
+    encode_secs = time.time() - encode_start
+
+    payload = {
+        "model": j["model"],
+        "prompt": COMPARE_PROMPT,
+        # Order matters here — the prompt refers to "first" and "second"
+        # by index.
+        "images": [img1_b64, img2_b64],
+        "stream": True,
+        "format": "json",
+        "keep_alive": "30m",
+        "options": {"temperature": 0.2},
+    }
+
+    timeout = httpx.Timeout(connect=10.0, read=idle_timeout, write=30.0, pool=10.0)
+    chunks: list[str] = []
+    started = time.time()
+    first_token_ts: Optional[float] = None
+    last_error: Optional[str] = None
+    final_evt: dict = {}
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            with client.stream("POST", f"{OLLAMA_HOST}/api/generate", json=payload) as r:
+                if r.status_code != 200:
+                    body = r.read().decode("utf-8", "replace")[:500]
+                    raise RuntimeError(f"Ollama HTTP {r.status_code}: {body}")
+                for line in r.iter_lines():
+                    if not line:
+                        continue
+                    if time.time() - started > total_timeout:
+                        raise RuntimeError(
+                            f"WATCHDOG: ollama exceeded total timeout of {total_timeout:.0f}s "
+                            f"on image comparison."
+                        )
+                    try:
+                        evt = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if evt.get("error"):
+                        last_error = str(evt["error"])
+                        break
+                    chunk = evt.get("response", "")
+                    if chunk:
+                        if first_token_ts is None:
+                            first_token_ts = time.time()
+                        chunks.append(chunk)
+                    if evt.get("done"):
+                        final_evt = evt
+                        break
+    except httpx.ReadTimeout as exc:
+        raise RuntimeError(
+            f"WATCHDOG: ollama stopped sending data for {idle_timeout:.0f}s "
+            f"on image comparison."
+        ) from exc
+    except httpx.RequestError as exc:
+        raise RuntimeError(f"Cannot reach Ollama at {OLLAMA_HOST}: {exc}") from exc
+
+    if last_error:
+        raise RuntimeError(f"Ollama error: {last_error}")
+    text = "".join(chunks).strip()
+    if not text:
+        raise RuntimeError("Ollama returned empty response for image comparison")
+    parsed = _parse_json_loose(text)
+
+    if parsed.get("winner") not in (1, 2):
+        raise RuntimeError(f"Comparison response missing valid winner: {text[:200]}")
+
+    total_secs = time.time() - encode_start
+    ns = 1_000_000_000.0
+    timing = {
+        "total_secs": round(total_secs, 2),
+        "image_encode_secs": round(encode_secs, 2),
+        "time_to_first_token_secs": round((first_token_ts - started), 2) if first_token_ts else None,
+        "eval_secs": round(final_evt["eval_duration"] / ns, 2) if final_evt.get("eval_duration") else None,
+    }
+    return parsed, text, timing
+
+
 def ollama_health() -> Optional[str]:
     """Return a human-readable problem string, or None if everything is OK."""
     try:
