@@ -430,3 +430,10 @@ def persist_score(image_id: int, result: dict) -> None:
                 image_id,
             ),
         )
+        # Refresh the XMP sidecar so the new Tech/Aest tags land in
+        # Lightroom-readable form.
+        from . import xmp as _xmp
+        try:
+            _xmp.refresh_sidecar(conn, image_id)
+        except Exception:
+            pass

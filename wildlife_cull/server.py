@@ -524,6 +524,12 @@ def api_feedback(image_id: int, req: FeedbackReq) -> dict:
         if not existing:
             raise HTTPException(status_code=404, detail="not found")
         db.set_feedback(conn, image_id, payload)
+        # A correction can flip the effective AI tag set (e.g. keep no→yes),
+        # so refresh the sidecar so Lightroom sees the updated truth.
+        try:
+            xmp.refresh_sidecar(conn, image_id)
+        except Exception:
+            pass
     return {"ok": True, "feedback": payload}
 
 
@@ -534,6 +540,10 @@ def api_clear_feedback(image_id: int) -> dict:
         if not existing:
             raise HTTPException(status_code=404, detail="not found")
         db.clear_feedback(conn, image_id)
+        try:
+            xmp.refresh_sidecar(conn, image_id)
+        except Exception:
+            pass
     return {"ok": True}
 
 
@@ -585,7 +595,7 @@ def api_bulk_tags(req: BulkTagsReq) -> dict:
                 conn, row["id"], row["user_rating"], merged, row["user_notes"], ts,
             )
             try:
-                xmp.write_sidecar(row["path"], row["user_rating"], merged, row["user_notes"])
+                xmp.refresh_sidecar(conn, row["id"])
             except Exception as exc:
                 sidecar_errors.append(f"{row['path']}: {exc}")
             updated += 1
@@ -626,7 +636,8 @@ def api_rate(image_id: int, req: RateReq) -> dict:
         db.set_user_rating(conn, image_id, rating, tags, notes, ts)
 
     try:
-        xmp.write_sidecar(row["path"], rating, tags or [], notes)
+        with db.connect() as conn:
+            xmp.refresh_sidecar(conn, image_id)
         sidecar_ok = True
         sidecar_err = None
     except Exception as exc:

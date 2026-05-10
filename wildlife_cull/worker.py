@@ -155,7 +155,18 @@ class BackgroundWorker:
                     status="done", model=judge["model"],
                     payload=parsed, raw=raw, error=None, ts=ts,
                 )
-                db.finalize_image_if_complete(conn, row["id"], [j["name"] for j in ai.JUDGES])
+                finalized = db.finalize_image_if_complete(
+                    conn, row["id"], [j["name"] for j in ai.JUDGES]
+                )
+            # Outside the DB write transaction — refresh the sidecar so
+            # Lightroom can see the fresh AI tags.
+            if finalized:
+                from . import xmp as _xmp
+                try:
+                    with db.connect() as conn:
+                        _xmp.refresh_sidecar(conn, row["id"])
+                except Exception as exc:
+                    _log(f"sidecar refresh failed for {row['filename']}: {exc}")
         except Exception as exc:
             detail = f"{type(exc).__name__}: {exc}"
             msg = f"{judge['label']} FAILED for {row['filename']}: {detail}"
