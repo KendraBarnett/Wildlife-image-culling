@@ -262,7 +262,8 @@ function renderAiBlock(img) {
   const judgeData = img.ai_judges || {};
 
   if (img.ai_status === "pending" && Object.keys(judgeData).length === 0) {
-    el.innerHTML = `<div class="pending">Analyzing this image. Each judge runs in turn (Editor → NatGeo → Stock).</div>`;
+    const order = (judges.length ? judges.map((j) => j.label).join(" → ") : "the judges");
+    el.innerHTML = `<div class="pending">Analyzing this image. Each judge runs in turn (${esc(order)}).</div>`;
     return;
   }
   if (img.ai_status === "error" && Object.keys(judgeData).length === 0) {
