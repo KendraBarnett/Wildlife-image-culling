@@ -96,13 +96,23 @@
       <option value="yes">Has my corrections</option>
       <option value="no">No corrections</option>
     </select>
-    <label>Focus:</label>
-    <select id="filter-focus">
+    <label>Keep:</label>
+    <select id="filter-keep">
       <option value="">Any</option>
-      <option value="very_sharp">Very sharp</option>
-      <option value="sharp">Sharp</option>
-      <option value="soft">Soft</option>
-      <option value="out_of_focus">Out of focus</option>
+      <option value="yes">Keep</option>
+      <option value="no">Don't keep</option>
+    </select>
+    <label>In focus:</label>
+    <select id="filter-in-focus">
+      <option value="">Any</option>
+      <option value="yes">Yes</option>
+      <option value="no">No</option>
+    </select>
+    <label>Claude scored:</label>
+    <select id="filter-scored">
+      <option value="">Any</option>
+      <option value="yes">Scored</option>
+      <option value="no">Not scored</option>
     </select>
     <label>Bursts:</label>
     <select id="filter-burst">
@@ -115,10 +125,10 @@
     <button id="recompute-bursts" class="secondary" title="Group similar consecutive frames into bursts and pick the sharpest of each">Find bursts</button>
     <label>Subject contains:</label>
     <input id="filter-subject" type="text" placeholder="owl, gorilla…" />
-    <label>Artistic ≥</label>
-    <input id="filter-min-artistic" type="number" min="1" max="10" step="1" />
-    <label>Portfolio ≥</label>
-    <input id="filter-min-portfolio" type="number" min="1" max="10" step="1" />
+    <label>Technical ≥</label>
+    <input id="filter-min-technical" type="number" min="1" max="10" step="0.5" />
+    <label>Aesthetic ≥</label>
+    <input id="filter-min-aesthetic" type="number" min="1" max="10" step="0.5" />
     <button id="filter-clear" class="secondary">Clear</button>
   </section>
 
@@ -147,8 +157,12 @@
           <p class="feedback-help">Your corrections become training signal. They show up as truth in the UI, and once you have at least 5 corrections, the judges will see them as examples on every future analysis. Leave any field blank to keep the AI's value.</p>
           <label class="fb-toggle"><input type="checkbox" id="fb-marked-wrong" /> Mark this whole analysis as wrong</label>
           <div class="fb-grid">
-            <label>Your Artistic <input type="number" id="fb-artistic" min="0" max="10" step="0.1" /></label>
-            <label>Your Portfolio <input type="number" id="fb-portfolio" min="0" max="10" step="0.1" /></label>
+            <label>Keep
+              <select id="fb-keep">
+                <option value="">— keep AI —</option>
+                <option value="yes">Yes — keep</option>
+                <option value="no">No — don't keep</option>
+              </select></label>
             <label>Type <select id="fb-animal-type" data-vocab="animal_type"><option value="">— keep AI —</option></select></label>
             <label>Species <input type="text" id="fb-species" placeholder="—" /></label>
             <label>Subject <input type="text" id="fb-subject" placeholder="—" /></label>

@@ -152,11 +152,13 @@ function readFilters() {
     "filter-silhouette": "silhouette",
     "filter-issue": "has_issue",
     "filter-feedback": "has_feedback",
-    "filter-focus": "focus",
+    "filter-keep": "keep",
+    "filter-in-focus": "in_focus",
+    "filter-scored": "scored",
     "filter-burst": "burst_only",
     "filter-subject": "subject_contains",
-    "filter-min-artistic": "min_artistic",
-    "filter-min-portfolio": "min_portfolio",
+    "filter-min-technical": "min_technical",
+    "filter-min-aesthetic": "min_aesthetic",
   };
   for (const [id, name] of Object.entries(map)) {
     const el = document.getElementById(id);
@@ -203,10 +205,10 @@ function renderCard(img) {
 
   const badges = document.createElement("div");
   badges.className = "badges";
-  if (img.focus_label === "out_of_focus") badges.appendChild(badge("OOF", "bad"));
-  else if (img.focus_label === "soft") badges.appendChild(badge("soft", "warn"));
-  else if (img.focus_label === "very_sharp") badges.appendChild(badge("sharp+", "good"));
+  if (img.ai_keep === "yes") badges.appendChild(badge("KEEP", "good"));
+  else if (img.ai_keep === "no") badges.appendChild(badge("cull", "bad"));
   if (img.ai_status === "done") {
+    if (img.ai_in_focus === "no") badges.appendChild(badge("OOF", "bad"));
     if (img.ai_motion === "in_motion") badges.appendChild(badge("motion", "good"));
     else if (img.ai_motion === "blurred") badges.appendChild(badge("blur", "warn"));
     if (img.ai_is_silhouette) badges.appendChild(badge("silh", "silh"));
@@ -223,13 +225,11 @@ function renderCard(img) {
   overlay.appendChild(stars);
   const scores = document.createElement("span");
   scores.className = "scores";
-  const judgesDone = img.judges_done || 0;
-  const judgesTotal = img.judges_total || 0;
-  if (img.ai_status === "done" || judgesDone > 0) {
-    const a = partialAvg(img, "artistic_score") ?? img.ai_artistic_score;
-    const p = partialAvg(img, "portfolio_potential") ?? img.ai_portfolio_score;
-    const stamp = (judgesTotal && judgesDone < judgesTotal) ? ` (${judgesDone}/${judgesTotal})` : "";
-    scores.textContent = `art ${formatScore(a)} · port ${formatScore(p)}${stamp}`;
+  if (img.claude_technical_score != null || img.claude_aesthetic_score != null) {
+    scores.textContent = `tech ${formatScore(img.claude_technical_score)} · aest ${formatScore(img.claude_aesthetic_score)}`;
+    scores.classList.add("claude-scores");
+  } else if (img.ai_status === "done") {
+    scores.textContent = img.ai_keep === "yes" ? "ready to score" : "";
   } else if (img.ai_status === "pending") {
     scores.textContent = "analyzing…";
   } else if (img.ai_status === "error") {
@@ -280,8 +280,7 @@ function renderFeedback(img) {
   if (fb) {
     const bits = [];
     if (fb.marked_wrong) bits.push("<b>Marked wrong</b>");
-    if (typeof fb.artistic === "number") bits.push(`Art ${formatScore(fb.artistic)}`);
-    if (typeof fb.portfolio === "number") bits.push(`Port ${formatScore(fb.portfolio)}`);
+    if (fb.keep) bits.push(`Keep: ${fb.keep === "yes" ? "Yes" : "No"}`);
     if (fb.animal_type) bits.push(`Type: ${esc(fb.animal_type)}`);
     if (fb.species) bits.push(`Species: ${esc(fb.species)}`);
     if (fb.in_focus) bits.push(`In focus: ${fb.in_focus === "yes" ? "Yes" : "No"}`);
@@ -302,8 +301,7 @@ function renderFeedback(img) {
   const setVal = (id, v) => { const el = $(id); if (el) el.value = (v === undefined || v === null) ? "" : v; };
   const setCheck = (id, v) => { const el = $(id); if (el) el.checked = !!v; };
   setCheck("#fb-marked-wrong", fb && fb.marked_wrong);
-  setVal("#fb-artistic", fb && typeof fb.artistic === "number" ? fb.artistic : "");
-  setVal("#fb-portfolio", fb && typeof fb.portfolio === "number" ? fb.portfolio : "");
+  setVal("#fb-keep", fb && fb.keep);
   setVal("#fb-animal-type", fb && fb.animal_type);
   setVal("#fb-species", fb && fb.species);
   setVal("#fb-subject", fb && fb.subject);
@@ -341,18 +339,16 @@ function renderAiBlock(img) {
   const judgeData = img.ai_judges || {};
 
   if (img.ai_status === "pending" && Object.keys(judgeData).length === 0) {
-    const order = (judges.length ? judges.map((j) => j.label).join(" → ") : "the judges");
-    el.innerHTML = `<div class="pending">Analyzing this image. Each judge runs in turn (${esc(order)}).</div>`;
+    el.innerHTML = `<div class="pending">Triage in progress…</div>`;
     return;
   }
   if (img.ai_status === "error" && Object.keys(judgeData).length === 0) {
     const errMsg = (img.ai && img.ai.error) ? img.ai.error : "(no detail)";
-    el.innerHTML = `<div class="ai-error"><div class="ai-error-title">AI error</div><div class="ai-error-detail"></div></div>`;
+    el.innerHTML = `<div class="ai-error"><div class="ai-error-title">Triage error</div><div class="ai-error-detail"></div></div>`;
     el.querySelector(".ai-error-detail").textContent = errMsg;
     return;
   }
 
-  const cards = judges.map((j) => renderJudgeCard(j, judgeData[j.name])).join("");
   const a = (() => {
     const primary = judges.find((j) => j.primary) || judges[0];
     if (primary && judgeData[primary.name] && judgeData[primary.name].result) {
@@ -361,9 +357,34 @@ function renderAiBlock(img) {
     return img.ai || {};
   })();
   const issues = (a.technical_issues || []).map(pretty).join(", ") || "—";
+  const triageModel = (judges[0] && judges[0].model) || "qwen2.5vl:7b";
+
+  const keepBadge = a.keep === "yes"
+    ? `<span class="keep-badge keep-yes">KEEP</span>`
+    : a.keep === "no"
+    ? `<span class="keep-badge keep-no">DON'T KEEP</span>`
+    : `<span class="keep-badge keep-unknown">—</span>`;
+
+  const claudeBlock = (img.claude_technical_score != null || img.claude_aesthetic_score != null)
+    ? `<div class="claude-scores-block">
+        <div class="claude-scores-title">CLAUDE SCORES</div>
+        <div class="claude-scores-row">
+          <div class="claude-score"><span class="claude-score-label">Technical</span><strong>${formatScore(img.claude_technical_score)}</strong><span class="denom">/10</span></div>
+          <div class="claude-score"><span class="claude-score-label">Aesthetic</span><strong>${formatScore(img.claude_aesthetic_score)}</strong><span class="denom">/10</span></div>
+        </div>
+        ${img.claude_reasoning ? `<div class="claude-reasoning">${esc(img.claude_reasoning)}</div>` : ""}
+      </div>`
+    : `<div class="claude-scores-block claude-not-scored">
+        <button id="modal-score-claude" class="primary">Score with Claude</button>
+        <span class="claude-cost-hint">~1¢ per image</span>
+      </div>`;
 
   el.innerHTML = `
-    <div class="judges-row">${cards}</div>
+    <div class="triage-header">
+      <div class="triage-keep">${keepBadge}</div>
+      <div class="triage-model muted">${esc(triageModel)}</div>
+    </div>
+    ${claudeBlock}
     ${img.burst_id ? `<div class="row"><span>Burst</span><strong>#${img.burst_id} · ${esc(pretty(img.burst_role || ""))}</strong></div>` : ""}
     <div class="row"><span>Type</span><strong>${esc(a.animal_type) || "—"}</strong></div>
     <div class="row"><span>Species</span><strong>${esc(a.species) || "—"}</strong></div>
@@ -377,26 +398,6 @@ function renderAiBlock(img) {
     <div class="row"><span>Issues</span><strong>${esc(issues)}</strong></div>
     ${a.notes ? `<div class="notes-line">${esc(a.notes)}</div>` : ""}
   `;
-}
-
-function renderJudgeCard(judge, slot) {
-  if (!slot) {
-    return `<div class="judge-card pending"><div class="judge-name">${esc(judge.label)}</div><div class="judge-state">Pending…</div><div class="judge-model">${esc(judge.model)}</div></div>`;
-  }
-  if (slot.status === "error") {
-    const detail = slot.error || "(no detail)";
-    return `<div class="judge-card error"><div class="judge-name">${esc(judge.label)}</div><div class="judge-state">Error</div><div class="judge-error-detail" title="${esc(detail)}">${esc(detail.slice(0, 120))}</div><div class="judge-model">${esc(judge.model)}</div></div>`;
-  }
-  const r = slot.result || {};
-  const notes = r.notes ? `<div class="judge-notes">${esc(r.notes)}</div>` : "";
-  const art = r.artistic_score ?? "?";
-  const port = r.portfolio_potential ?? "?";
-  return `<div class="judge-card done">
-    <div class="judge-name">${esc(judge.label)}</div>
-    <div class="judge-scores"><span class="score">Art <b>${art}</b><span class="denom">/10</span></span><span class="score">Port <b>${port}</b><span class="denom">/10</span></span></div>
-    ${notes}
-    <div class="judge-model">${esc(judge.model)}</div>
-  </div>`;
 }
 
 function esc(s) {
@@ -416,18 +417,6 @@ function formatScore(v) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
-function partialAvg(img, field) {
-  const judges = img.ai_judges || {};
-  const vals = [];
-  for (const slot of Object.values(judges)) {
-    if (slot && slot.status === "done" && slot.result) {
-      const v = slot.result[field];
-      if (typeof v === "number") vals.push(v);
-    }
-  }
-  if (!vals.length) return null;
-  return Math.round((vals.reduce((s, n) => s + n, 0) / vals.length) * 10) / 10;
-}
 
 function setStars(v) {
   $("#stars").dataset.rating = v;
@@ -607,11 +596,12 @@ document.addEventListener("DOMContentLoaded", () => {
   for (const id of [
     "filter-ai-status", "filter-animal-type", "filter-eye-focus", "filter-motion",
     "filter-composition", "filter-lighting", "filter-silhouette", "filter-issue",
-    "filter-feedback", "filter-focus", "filter-burst",
+    "filter-feedback", "filter-keep", "filter-in-focus", "filter-scored", "filter-burst",
   ]) {
-    $("#" + id).onchange = refreshGrid;
+    const el = $("#" + id);
+    if (el) el.onchange = refreshGrid;
   }
-  for (const id of ["filter-species", "filter-subject", "filter-min-artistic", "filter-min-portfolio"]) {
+  for (const id of ["filter-species", "filter-subject", "filter-min-technical", "filter-min-aesthetic"]) {
     let t;
     $("#" + id).oninput = () => {
       clearTimeout(t);
@@ -640,10 +630,11 @@ document.addEventListener("DOMContentLoaded", () => {
       "filter-ai-status", "filter-animal-type", "filter-species",
       "filter-eye-focus", "filter-motion", "filter-composition",
       "filter-lighting", "filter-silhouette", "filter-issue", "filter-feedback",
-      "filter-focus", "filter-burst",
-      "filter-subject", "filter-min-artistic", "filter-min-portfolio",
+      "filter-keep", "filter-in-focus", "filter-scored", "filter-burst",
+      "filter-subject", "filter-min-technical", "filter-min-aesthetic",
     ]) {
-      $("#" + id).value = "";
+      const el = $("#" + id);
+      if (el) el.value = "";
     }
     refreshGrid();
   };
@@ -686,8 +677,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const silVal = $("#fb-silhouette").value;
     const body = {
       marked_wrong: $("#fb-marked-wrong").checked,
-      artistic: numOrNull("#fb-artistic"),
-      portfolio: numOrNull("#fb-portfolio"),
+      keep: strOrNull("#fb-keep"),
       animal_type: strOrNull("#fb-animal-type"),
       species: strOrNull("#fb-species"),
       subject: strOrNull("#fb-subject"),

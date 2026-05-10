@@ -16,7 +16,7 @@ Algorithm:
 - Single-image groups are NOT bursts (no need to mark them).
 
 For each burst we pick a 'best':
-- Highest sharpness wins. Ties broken by highest AI artistic_score.
+- Highest sharpness wins. Ties broken by Claude technical_score when present.
 - Other frames in the burst get role='alt'; the picked one gets 'best'.
 - Standalone images get burst_id=NULL, burst_role=NULL.
 
@@ -47,7 +47,7 @@ def recompute_bursts_for_folder(folder: str) -> dict:
     started = time.time()
     with db.connect() as conn:
         rows = conn.execute(
-            "SELECT id, mtime, embedding, focus_score, ai_artistic_score "
+            "SELECT id, mtime, embedding, focus_score, claude_technical_score "
             "FROM images WHERE folder=? AND embedding IS NOT NULL "
             "ORDER BY mtime, id",
             (folder,),
@@ -77,7 +77,7 @@ def recompute_bursts_for_folder(folder: str) -> dict:
                 "mtime": mtime,
                 "vec": vec,
                 "focus": r["focus_score"] if r["focus_score"] is not None else 0.0,
-                "art": r["ai_artistic_score"] if r["ai_artistic_score"] is not None else 0.0,
+                "art": r["claude_technical_score"] if r["claude_technical_score"] is not None else 0.0,
             }
             if not current:
                 current = [entry]

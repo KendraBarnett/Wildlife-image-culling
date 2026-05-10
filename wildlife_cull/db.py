@@ -24,8 +24,7 @@ CREATE TABLE IF NOT EXISTS images (
 
     ai_status TEXT NOT NULL DEFAULT 'pending',
     ai_json TEXT,
-    ai_artistic_score INTEGER,
-    ai_portfolio_score INTEGER,
+    ai_keep TEXT,
     ai_in_focus TEXT,
     ai_eye_focus TEXT,
     ai_motion TEXT,
@@ -36,6 +35,7 @@ CREATE TABLE IF NOT EXISTS images (
     ai_animal_type TEXT,
     ai_species TEXT,
     ai_technical_issues TEXT,
+    ai_notes TEXT,
     ai_analyzed_at REAL,
     ai_judges_json TEXT,
     ai_feedback_json TEXT,
@@ -43,6 +43,15 @@ CREATE TABLE IF NOT EXISTS images (
     focus_label TEXT,
     burst_id INTEGER,
     burst_role TEXT,
+
+    claude_technical_score REAL,
+    claude_aesthetic_score REAL,
+    claude_reasoning TEXT,
+    claude_scored_at REAL,
+    claude_input_tokens INTEGER,
+    claude_output_tokens INTEGER,
+    claude_cache_read_tokens INTEGER,
+    claude_cost_usd REAL,
 
     embedding BLOB,
     embedding_model TEXT,
@@ -63,6 +72,21 @@ CREATE TABLE IF NOT EXISTS folders (
     ingested_at REAL NOT NULL,
     image_count INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS claude_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    image_id INTEGER,
+    ts REAL NOT NULL,
+    model TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0,
+    success INTEGER NOT NULL DEFAULT 1,
+    error TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_claude_usage_ts ON claude_usage(ts);
 """
 
 
@@ -87,10 +111,33 @@ def _migrate(conn: sqlite3.Connection) -> None:
         ("burst_id", "ALTER TABLE images ADD COLUMN burst_id INTEGER"),
         ("burst_role", "ALTER TABLE images ADD COLUMN burst_role TEXT"),
         ("ai_in_focus", "ALTER TABLE images ADD COLUMN ai_in_focus TEXT"),
+        ("ai_keep", "ALTER TABLE images ADD COLUMN ai_keep TEXT"),
+        ("ai_notes", "ALTER TABLE images ADD COLUMN ai_notes TEXT"),
+        ("claude_technical_score", "ALTER TABLE images ADD COLUMN claude_technical_score REAL"),
+        ("claude_aesthetic_score", "ALTER TABLE images ADD COLUMN claude_aesthetic_score REAL"),
+        ("claude_reasoning", "ALTER TABLE images ADD COLUMN claude_reasoning TEXT"),
+        ("claude_scored_at", "ALTER TABLE images ADD COLUMN claude_scored_at REAL"),
+        ("claude_input_tokens", "ALTER TABLE images ADD COLUMN claude_input_tokens INTEGER"),
+        ("claude_output_tokens", "ALTER TABLE images ADD COLUMN claude_output_tokens INTEGER"),
+        ("claude_cache_read_tokens", "ALTER TABLE images ADD COLUMN claude_cache_read_tokens INTEGER"),
+        ("claude_cost_usd", "ALTER TABLE images ADD COLUMN claude_cost_usd REAL"),
     ]:
         if name not in cols:
             conn.execute(ddl)
+
+    # Wipe the legacy artistic/portfolio score columns. SQLite 3.35+ supports
+    # DROP COLUMN; older versions silently fail and we keep going (the columns
+    # will just sit there orphaned, which is harmless — nothing reads them).
+    for legacy in ("ai_artistic_score", "ai_portfolio_score"):
+        if legacy in cols:
+            try:
+                conn.execute(f"ALTER TABLE images DROP COLUMN {legacy}")
+            except sqlite3.OperationalError:
+                pass
+
     conn.execute("CREATE INDEX IF NOT EXISTS idx_images_burst ON images(burst_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_images_keep ON images(ai_keep)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_claude_usage_ts ON claude_usage(ts)")
 
 
 @contextmanager
@@ -188,11 +235,6 @@ def finalize_image_if_complete(
         )
         return True
 
-    artistic = [d["result"].get("artistic_score") for d in done if isinstance(d["result"].get("artistic_score"), (int, float))]
-    portfolio = [d["result"].get("portfolio_potential") for d in done if isinstance(d["result"].get("portfolio_potential"), (int, float))]
-    avg_a = round(sum(artistic) / len(artistic), 1) if artistic else None
-    avg_p = round(sum(portfolio) / len(portfolio), 1) if portfolio else None
-
     primary = next((judges[n]["result"] for n in judge_names if judges[n]["status"] == "done" and n == judge_names[0]), None)
     if primary is None:
         primary = done[0]["result"]
@@ -203,8 +245,7 @@ def finalize_image_if_complete(
     conn.execute(
         """UPDATE images SET
             ai_status='done',
-            ai_artistic_score=?,
-            ai_portfolio_score=?,
+            ai_keep=?,
             ai_in_focus=?,
             ai_eye_focus=?,
             ai_motion=?,
@@ -215,11 +256,11 @@ def finalize_image_if_complete(
             ai_animal_type=?,
             ai_species=?,
             ai_technical_issues=?,
+            ai_notes=?,
             ai_analyzed_at=?
         WHERE id=?""",
         (
-            avg_a,
-            avg_p,
+            primary.get("keep"),
             primary.get("in_focus"),
             primary.get("eye_focus"),
             primary.get("motion"),
@@ -230,6 +271,7 @@ def finalize_image_if_complete(
             primary.get("animal_type"),
             primary.get("species"),
             json.dumps(issues),
+            primary.get("notes"),
             time.time(),
             image_id,
         ),
@@ -297,8 +339,7 @@ def set_ai_result(conn: sqlite3.Connection, image_id: int, ai: dict, raw_json: s
         """UPDATE images SET
             ai_status='done',
             ai_json=?,
-            ai_artistic_score=?,
-            ai_portfolio_score=?,
+            ai_keep=?,
             ai_in_focus=?,
             ai_eye_focus=?,
             ai_motion=?,
@@ -309,12 +350,12 @@ def set_ai_result(conn: sqlite3.Connection, image_id: int, ai: dict, raw_json: s
             ai_animal_type=?,
             ai_species=?,
             ai_technical_issues=?,
+            ai_notes=?,
             ai_analyzed_at=?
         WHERE id=?""",
         (
             raw_json,
-            ai.get("artistic_score"),
-            ai.get("portfolio_potential"),
+            ai.get("keep"),
             ai.get("in_focus"),
             ai.get("eye_focus"),
             ai.get("motion"),
@@ -325,6 +366,7 @@ def set_ai_result(conn: sqlite3.Connection, image_id: int, ai: dict, raw_json: s
             ai.get("animal_type"),
             ai.get("species"),
             json.dumps(issues),
+            ai.get("notes"),
             ts,
             image_id,
         ),
@@ -339,8 +381,8 @@ def reset_ai_for_reanalysis(conn: sqlite3.Connection, image_ids: list[int]) -> i
         f"""UPDATE images SET
             ai_status='pending',
             ai_json=NULL,
-            ai_artistic_score=NULL,
-            ai_portfolio_score=NULL,
+            ai_keep=NULL,
+            ai_in_focus=NULL,
             ai_eye_focus=NULL,
             ai_motion=NULL,
             ai_composition=NULL,
@@ -350,6 +392,7 @@ def reset_ai_for_reanalysis(conn: sqlite3.Connection, image_ids: list[int]) -> i
             ai_animal_type=NULL,
             ai_species=NULL,
             ai_technical_issues=NULL,
+            ai_notes=NULL,
             ai_analyzed_at=NULL,
             ai_judges_json=NULL
         WHERE id IN ({placeholders})""",

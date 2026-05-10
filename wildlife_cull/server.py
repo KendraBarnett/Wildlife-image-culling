@@ -190,8 +190,11 @@ def api_images(
     has_feedback: Optional[str] = None,
     focus: Optional[str] = None,
     burst_only: Optional[str] = None,
-    min_artistic: Optional[int] = None,
-    min_portfolio: Optional[int] = None,
+    keep: Optional[str] = None,
+    in_focus: Optional[str] = None,
+    scored: Optional[str] = None,
+    min_technical: Optional[float] = None,
+    min_aesthetic: Optional[float] = None,
     limit: int = Query(default=500, le=2000),
     offset: int = 0,
 ) -> dict:
@@ -253,20 +256,32 @@ def api_images(
         where.append("burst_id IS NOT NULL")
     elif burst_only == "singletons":
         where.append("burst_id IS NULL")
-    if min_artistic is not None:
-        where.append("ai_artistic_score >= ?")
-        params.append(min_artistic)
-    if min_portfolio is not None:
-        where.append("ai_portfolio_score >= ?")
-        params.append(min_portfolio)
+    if keep in ("yes", "no"):
+        where.append("ai_keep=?")
+        params.append(keep)
+    if in_focus in ("yes", "no"):
+        where.append("ai_in_focus=?")
+        params.append(in_focus)
+    if scored == "yes":
+        where.append("claude_scored_at IS NOT NULL")
+    elif scored == "no":
+        where.append("claude_scored_at IS NULL")
+    if min_technical is not None:
+        where.append("claude_technical_score >= ?")
+        params.append(min_technical)
+    if min_aesthetic is not None:
+        where.append("claude_aesthetic_score >= ?")
+        params.append(min_aesthetic)
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
     sql = (
         "SELECT id, filename, folder, is_raw, width, height, "
-        "ai_status, ai_artistic_score, ai_portfolio_score, "
+        "ai_status, ai_keep, ai_notes, "
         "ai_in_focus, ai_eye_focus, ai_motion, ai_composition, ai_lighting, "
         "ai_is_silhouette, ai_subject, ai_animal_type, ai_species, "
         "ai_technical_issues, ai_judges_json, ai_feedback_json, "
         "focus_score, focus_label, burst_id, burst_role, "
+        "claude_technical_score, claude_aesthetic_score, claude_reasoning, "
+        "claude_scored_at, claude_cost_usd, "
         "user_rating, user_tags, user_notes "
         f"FROM images {where_sql} ORDER BY filename LIMIT ? OFFSET ?"
     )
@@ -387,8 +402,7 @@ def api_image(image_id: int) -> dict:
 
 class FeedbackReq(BaseModel):
     marked_wrong: bool = False
-    artistic: Optional[float] = Field(None, ge=0, le=10)
-    portfolio: Optional[float] = Field(None, ge=0, le=10)
+    keep: Optional[str] = None
     in_focus: Optional[str] = None
     eye_focus: Optional[str] = None
     motion: Optional[str] = None

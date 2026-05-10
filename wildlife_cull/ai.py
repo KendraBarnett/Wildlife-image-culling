@@ -16,7 +16,7 @@ from .config import OLLAMA_HOST, VISION_MODEL, CLIP_MODEL
 AI_IMAGE_MAX_SIZE = 1024
 
 
-_SHARED_SCHEMA = """Reply with ONLY a JSON object, no prose, no markdown fences. Use this schema and \
+_TRIAGE_SCHEMA = """Reply with ONLY a JSON object, no prose, no markdown fences. Use this schema and \
 pick values STRICTLY from the listed options for every enum field:
 
 {
@@ -30,9 +30,8 @@ pick values STRICTLY from the listed options for every enum field:
   "lighting": <PICK EXACTLY ONE: "harsh" | "soft" | "golden" | "low_light" | "backlit" | "overcast" | "mixed">,
   "is_silhouette": true | false,
   "technical_issues": [<zero or more, each ONE OF: "out_of_focus","camera_shake","clipped_subject","blown_highlights","heavy_noise","obstructed">],
-  "artistic_score": <number 1.0-10.0, ONE decimal place, e.g. 4.3 or 7.1>,
-  "portfolio_potential": <number 1.0-10.0, ONE decimal place, e.g. 5.7 or 8.2>,
-  "notes": "<2-3 sentences. First sentence: what the image actually shows and what works about it (subject, light, composition, behavior). Second sentence: what holds it back, with specifics. Optional third sentence: why this scored where it did. Be SPECIFIC and CONCRETE. NEVER write empty contradictions like 'good, but blurry' — name strengths and flaws separately and tie each to what you can see.>"
+  "keep": <PICK EXACTLY ONE: "yes" | "no">,
+  "notes": "<2-3 sentences. First sentence: what the image actually shows (subject, light, composition, behavior). Second sentence: technical and compositional state — what works, what doesn't. Third sentence: WHY keep or don't keep. Be SPECIFIC and CONCRETE. NEVER write empty contradictions like 'good, but blurry' — name strengths and flaws separately and tie each to what you can see.>"
 }
 
 Schema rules:
@@ -48,17 +47,16 @@ DO NOT INVENT FLAWS. The single biggest failure mode is hallucinating problems t
 - Do not flag "blown_highlights" unless you can actually see white pixels with no detail in the subject area.
 
 INTERNAL CONSISTENCY — these must agree:
-- `in_focus` is the simple yes/no overall question: is the SUBJECT sharp enough to use? If `in_focus` is "no", `technical_issues` MUST include "out_of_focus", and BOTH `eye_focus` MUST be "soft" or "not_visible". If `in_focus` is "yes", `eye_focus` MUST be "sharp" and "out_of_focus" MUST NOT appear in technical_issues.
+- `in_focus` is the simple yes/no overall question: is the SUBJECT sharp enough to use? If `in_focus` is "no", `technical_issues` MUST include "out_of_focus", and `eye_focus` MUST be "soft" or "not_visible". If `in_focus` is "yes", `eye_focus` MUST be "sharp" and "out_of_focus" MUST NOT appear in technical_issues.
 - If `technical_issues` contains "out_of_focus", then `eye_focus` MUST be "soft" or "not_visible" AND `in_focus` MUST be "no". Saying "sharp" in one place while flagging out-of-focus in another is a forbidden contradiction.
 - If `motion` is "blurred" because of camera shake, `technical_issues` MUST include "camera_shake".
 - Notes must never contradict the structured fields. If you write "tack sharp" in notes, eye_focus cannot be "soft" and out_of_focus cannot be in issues and in_focus must be "yes".
 
-SCORE CAPS WHEN A REAL ISSUE IS PRESENT (only apply if the issue is genuine, not invented):
-- Any `out_of_focus` flag: cap BOTH artistic_score AND portfolio_potential at 3.0. Out-of-focus images cannot ship.
-- Any `camera_shake` flag: cap both at 3.0.
-- Any `clipped_subject` flag: cap both at 4.0.
-- Any `blown_highlights` flag where the highlights are on the subject: cap both at 4.5.
-- Any `obstructed` flag: cap both at 4.5."""
+KEEP DECISION — this is the cull decision. Be honest and somewhat strict; the photographer wants to spend time only on images worth keeping.
+- "no" if: in_focus="no", or any out_of_focus / camera_shake flag, or composition="weak" combined with no other redeeming qualities, or the subject is unidentifiable / clipped in a ruinous way.
+- "yes" if: technically clean (in_focus="yes", eye_focus="sharp" or n/a) AND has at least one of: clear subject, decent composition, interesting behavior, good light, or something distinctive about the moment.
+- When uncertain between yes and no, default to "no" — the photographer would rather review a missed maybe than waste time on a clearly bad image.
+- "keep" answers a different question than artistic quality. A technically perfect but boring portrait CAN still be a "keep" (it's usable). A flawed but rare moment CAN still be a "keep" (the moment matters). The Phase 2 Claude scorer will rank quality among keepers later — your job here is just to filter out the clearly unusable."""
 
 
 _SHIPPED_AS_IS = """CRITICAL CONTEXT: this photographer SHIPS PHOTOS AS-IS. They will NOT do heavy \
@@ -69,94 +67,19 @@ If a flaw cannot be removed by a basic edit, score the image AS IF the flaw stay
 Do not give credit for "could be saved with work." Score what will actually leave the camera bag."""
 
 
-_BASELINE_RUBRIC = """SCORING APPROACH — be HARSH and DISCRIMINATING.
-
-The default verdict for any wildlife photo is "filler — not interesting." \
-Most working photographers' shoots are 90% filler; say so. You must EARN \
-points up from a base of 3 for unremarkable images. Do not start in the \
-middle and adjust slightly — start LOW and add points for what makes a \
-photo actually work.
-
-START EVERY IMAGE AT artistic_score = 3. Then:
-
-ADD +1 each (max +7) for any of these that genuinely apply:
-- Eye is decisively sharp on the actual eye (not just "the bird is in focus")
-- Light is doing something interesting (golden, dramatic side-light, rim, atmosphere, mood)
-- Genuine behavior is happening (calling, eating, flight, interaction, hunting, courtship)
-- Composition is deliberate and works (intentional negative space, leading lines, frame-within-frame, off-center balance that's clearly chosen)
-- Moment is unusual or rare for the species
-- Image makes a viewer pause — a strong response of any kind
-- Would hold up next to working pros' published work
-
-SUBTRACT -1 each for any of these:
-- Blown highlights touch the subject and lose feather/fur detail
-- Eye is soft, missed, or not visible on a static animal
-- Camera-aware "looking at the lens" pose with no other interest
-- Cluttered or distracting background you can't crop out
-- Visible captive cues (enclosure walls, glass, fences, name placards)
-- Redundant within a burst (this is one of many similar frames)
-- Common species in a common pose with no special light or story
-
-Final artistic_score = 3 + bonuses − penalties, with finer-grained decimals \
-where useful (e.g. 4.3 if "barely above filler with one weak strength", 6.7 \
-if "good and creeping toward strong"). Use ONE decimal place. Clamp to 1.0–10.0.
-
-portfolio_potential answers a DIFFERENT question: "Would this be chosen over \
-similar work?" It MUST often differ from artistic_score. A technically strong \
-but generic shot has high artistic_score but lower portfolio_potential (too \
-much competition). A flawed but rare moment can have a lower artistic_score \
-yet higher portfolio_potential. If you find yourself writing the same number \
-for both, reconsider — what would make a buyer choose this over the next \
-photographer's frame?
-
-Calibration anchors:
-- 3 = filler. The base. Most images.
-- 4 = barely above filler. One small thing going for it.
-- 5 = competent average. Stock-grade at best.
-- 6 = good. Worth keeping.
-- 7 = strong. Portfolio candidate.
-- 8 = excellent. Rare in any shoot.
-- 9 = exceptional. Headline image.
-- 10 = once-a-year. Almost never give this."""
-
-
-NATGEO_PROMPT = f"""You are a senior National Geographic photo editor evaluating a wildlife image \
-for potential editorial use. Your priorities, in strict order: (1) behavioral or biological \
-story, (2) sense of place and conservation context, (3) rarity of the moment, (4) authenticity \
-(no obvious zoo or captive cues), (5) image craft. A technically perfect portrait of a common \
-animal in mundane light is editorial filler — score it as such.
+TRIAGE_PROMPT = f"""You are a wildlife-photo cull assistant. Your job is to look at one image and \
+produce a structured triage report for the photographer: what's in it, basic technical state, and \
+a yes/no keep decision. You are NOT scoring artistic merit — a separate, more capable scorer (Claude) \
+runs later, only on the photographer's keepers. Your job is to filter out the clearly unusable and \
+let the keepers through.
 
 {_SHIPPED_AS_IS}
 
-{_SHARED_SCHEMA}
+{_TRIAGE_SCHEMA}
 
-{_BASELINE_RUBRIC}
-
-NATGEO-SPECIFIC weights when scoring:
-- Behavior, environment, and rarity matter MOST. A clean technical portrait without those is filler (artistic_score around 3-5).
-- Authenticity matters. Visible captive cues (enclosure, glass, fence, name placard) cap artistic_score at 5 and portfolio_potential at 4.
-- "Would this run in a NatGeo feature?" is the portfolio_potential question. Most images do not survive.
-- A flawed but unique behavior moment (e.g. predation, courtship, rare species) can score higher than a clean studio-style portrait."""
-
-
-STOCK_PROMPT = f"""You are a senior stock-photo buyer evaluating broad commercial licensing potential. \
-Your priorities: clean isolated subject, broadly appealing pose, universal relatability, \
-room for negative space and text overlay, marketability across many contexts (greeting \
-cards, calendars, conservation websites, advertorials). Niche or unsettling images do not \
-license well; score them down even if they are artistically strong.
-
-{_SHIPPED_AS_IS}
-
-{_SHARED_SCHEMA}
-
-{_BASELINE_RUBRIC}
-
-STOCK-SPECIFIC weights when scoring:
-- Clean isolation and clear subject matter most. A clean shot of a common animal can score well here even if NatGeo would reject it.
-- Visible zoo cues are NOT necessarily disqualifying for stock, but cap artistic_score at 7 since editorial outlets won't use it.
-- Cluttered background / no room for text overlay: cap artistic_score at 6.
-- Subjects that are visually challenging for broad audiences (gore, large spiders, snakes in striking poses): cap artistic_score at 6.
-- portfolio_potential here = "broad licensing appeal" — not artistic value. A boring but clean cardinal portrait may have higher portfolio_potential than a stunning predation shot, because licensing buyers want safe, generic, repeatable subjects."""
+Your only job: identify, classify, flag genuine technical problems, and recommend keep / don't keep. \
+Be honest about what you can actually see. When uncertain, default to "no" on `keep` — the \
+photographer would rather review a missed maybe than waste time on a clearly bad image."""
 
 
 # Single source of truth for the controlled vocab. The server exposes this
@@ -164,6 +87,7 @@ STOCK-SPECIFIC weights when scoring:
 AI_VOCAB = {
     "animal_type": ["Mammal", "Bird", "Reptile", "Amphibian", "Fish", "Insect", "Other", "Unknown"],
     "in_focus": ["yes", "no"],
+    "keep": ["yes", "no"],
     "eye_focus": ["sharp", "soft", "not_visible", "n/a"],
     "motion": ["still", "subtle", "in_motion", "blurred"],
     "composition": ["strong", "standard", "weak"],
@@ -182,20 +106,12 @@ AI_VOCAB = {
 # image.
 JUDGES = [
     {
-        "name": "natgeo",
-        "label": "NatGeo",
+        "name": "triage",
+        "label": "Triage",
         "model": "qwen2.5vl:7b",
-        "prompt": NATGEO_PROMPT,
+        "prompt": TRIAGE_PROMPT,
         "weight": 1.0,
-        "primary": True,  # this judge's structured fields populate the searchable columns
-    },
-    {
-        "name": "stock",
-        "label": "Stock",
-        "model": "qwen2.5vl:7b",
-        "prompt": STOCK_PROMPT,
-        "weight": 1.0,
-        "primary": False,
+        "primary": True,
     },
 ]
 
@@ -248,20 +164,17 @@ def format_feedback_block(rows: list[dict], max_examples: int = 5) -> str:
             if isinstance(slot, dict) and slot.get("status") == "done" and slot.get("result"):
                 res = slot["result"]
                 ai_bits.append(
-                    f"{name}: artistic={res.get('artistic_score')}, "
-                    f"portfolio={res.get('portfolio_potential')}, "
+                    f"keep={res.get('keep')}, "
+                    f"in_focus={res.get('in_focus')}, "
                     f"eye_focus={res.get('eye_focus')}, "
                     f"composition={res.get('composition')}, "
                     f"lighting={res.get('lighting')}, "
                     f"issues={res.get('technical_issues')}"
                 )
-        ai_text = " | ".join(ai_bits) if ai_bits else "(no AI scores)"
+        ai_text = " | ".join(ai_bits) if ai_bits else "(no AI fields)"
 
         user_bits = []
-        for k in ("artistic", "portfolio"):
-            if k in fb:
-                user_bits.append(f"{k}={fb[k]}")
-        for k in ("in_focus", "eye_focus", "motion", "composition", "lighting",
+        for k in ("keep", "in_focus", "eye_focus", "motion", "composition", "lighting",
                   "animal_type", "species", "subject"):
             if k in fb and fb[k]:
                 user_bits.append(f"{k}={fb[k]}")
@@ -291,13 +204,13 @@ def format_feedback_block(rows: list[dict], max_examples: int = 5) -> str:
 
     return (
         "PHOTOGRAPHER FEEDBACK ON YOUR PAST WORK — these are corrections this user has "
-        "made to prior AI analyses. They are GROUND TRUTH. Use them as calibration anchors: "
-        "if you see a similar pattern on the new image, lean toward the user's verdict, not "
-        "the previous AI verdict. Pay attention to specific recurring complaints in the "
-        "user's notes (e.g. 'don't hallucinate out_of_focus when the eye is sharp', "
-        "'be harsher with portfolio_potential', 'don't penalize captive context for stock').\n\n"
+        "made to prior triage analyses. They are GROUND TRUTH. Use them as calibration anchors: "
+        "if you see a similar pattern on the new image, lean toward the user's verdict. Pay "
+        "attention to specific recurring complaints in the user's notes (e.g. 'don't hallucinate "
+        "out_of_focus when the eye is sharp', 'be stricter on keep — most images aren't worth "
+        "scoring', 'a clean portrait of a common bird is still a keep if technically clean').\n\n"
         + "\n".join(items)
-        + "\n\nNow evaluate the new image, applying that calibration:\n\n"
+        + "\n\nNow triage the new image, applying that calibration:\n\n"
     )
 
 

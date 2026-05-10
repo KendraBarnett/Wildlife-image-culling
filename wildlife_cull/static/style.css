@@ -53,6 +53,22 @@ body.select-mode .card:hover { outline: 2px solid var(--accent); }
 .card.ai-status-cancelled { opacity: 0.5; }
 .modal-reanalyze { margin-top: 8px; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
 .judges-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
+.triage-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.keep-badge { display: inline-block; padding: 4px 10px; border-radius: 4px; font-weight: 700; font-size: 13px; letter-spacing: 0.5px; }
+.keep-badge.keep-yes { background: rgba(80, 200, 120, 0.25); color: #6fdb95; border: 1px solid rgba(80, 200, 120, 0.5); }
+.keep-badge.keep-no { background: rgba(255, 100, 100, 0.18); color: #ff8a8a; border: 1px solid rgba(255, 100, 100, 0.45); }
+.keep-badge.keep-unknown { background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); }
+.triage-model { font-size: 10px; font-family: ui-monospace, SFMono-Regular, monospace; }
+.claude-scores-block { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-bottom: 12px; }
+.claude-scores-title { font-size: 10px; letter-spacing: 1px; color: var(--muted); margin-bottom: 6px; }
+.claude-scores-row { display: flex; gap: 18px; }
+.claude-score { display: flex; align-items: baseline; gap: 4px; }
+.claude-score-label { color: var(--muted); font-size: 11px; margin-right: 4px; }
+.claude-score strong { color: var(--accent); font-size: 18px; }
+.claude-reasoning { margin-top: 8px; font-size: 12px; color: var(--muted); font-style: italic; line-height: 1.4; }
+.claude-not-scored { display: flex; align-items: center; gap: 12px; }
+.claude-cost-hint { font-size: 11px; color: var(--muted); }
+.scores.claude-scores { color: #d8b6ff; }
 .judge-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; min-height: 80px; display: flex; flex-direction: column; gap: 4px; }
 .judge-card.error { border-color: rgba(255, 100, 100, 0.5); background: rgba(255, 100, 100, 0.08); }
 .judge-card.pending { opacity: 0.55; }
