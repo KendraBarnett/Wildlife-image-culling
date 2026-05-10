@@ -156,7 +156,7 @@
     <span class="bulk-divider">|</span>
     <button id="recheck-folders" class="secondary" title="Probe every folder's path on disk. Use after plugging in an external drive — folders that were marked offline come back as soon as they're reachable.">Recheck folders</button>
     <button id="refresh-sidecars" class="secondary" title="Rewrite every image's XMP sidecar from current AI/Claude state. Use this once after the AI-tag feature lands so existing analyses show up as Lightroom keywords. Fast — no re-analysis.">Refresh all sidecars</button>
-    <button id="backfill-capture-times" class="secondary" title="Pull EXIF DateTimeOriginal for every image that doesn't have one yet. Needed for accurate burst detection — file mtimes are often wrong on copied archives.">Backfill capture times</button>
+    <button id="backfill-capture-times" class="secondary" title="Pull EXIF for every image that doesn't have it yet — capture time, camera, lens, focal length, ISO, aperture, shutter, exposure comp. Needed for accurate burst detection and for the Capture Info panel in the modal.">Backfill EXIF</button>
     <button id="drop-folder-previews" class="secondary" title="Delete previews for THIS folder only. Use on completed shoots to reclaim disk without affecting other folders.">Drop this folder's previews</button>
     <button id="clear-previews" class="secondary" title="Delete ALL cached preview JPEGs across every folder. Previews re-extract on demand next time you open the app.">Clear all previews</button>
     <span id="preview-stats" class="bulk-info"></span>

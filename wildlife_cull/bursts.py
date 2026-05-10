@@ -204,10 +204,11 @@ def recompute_bursts_for_folder(
 
 
 def backfill_capture_times() -> dict:
-    """Pull EXIF DateTimeOriginal from disk for every image missing
-    capture_time. Run once after upgrading; subsequent ingests fill it
-    automatically. Slow on first run for large libraries (~one exiftool
-    call per image) but only has to happen once."""
+    """Pull every EXIF field we track (DateTimeOriginal, camera, lens,
+    focal length, ISO, aperture, shutter, exposure comp) for any image
+    that's missing some of them. One exiftool call per image, same as
+    ingest. Run once after upgrading; subsequent ingests fill these
+    automatically."""
     from . import ingest
     started = time.time()
     updated = 0
@@ -216,16 +217,36 @@ def backfill_capture_times() -> dict:
     errors: list[str] = []
     with db.connect() as conn:
         rows = conn.execute(
-            "SELECT id, path FROM images WHERE capture_time IS NULL "
-            "AND path IS NOT NULL"
+            "SELECT id, path FROM images "
+            "WHERE path IS NOT NULL "
+            "AND (capture_time IS NULL OR exif_camera IS NULL)"
         ).fetchall()
         for r in rows:
             try:
-                t = ingest.extract_capture_time(Path(r["path"]))
-                if t is not None:
+                exif = ingest.extract_exif(Path(r["path"]))
+                if exif:
                     conn.execute(
-                        "UPDATE images SET capture_time=? WHERE id=?",
-                        (t, r["id"]),
+                        "UPDATE images SET "
+                        "capture_time=COALESCE(?, capture_time), "
+                        "exif_camera=COALESCE(?, exif_camera), "
+                        "exif_lens=COALESCE(?, exif_lens), "
+                        "exif_focal_length=COALESCE(?, exif_focal_length), "
+                        "exif_iso=COALESCE(?, exif_iso), "
+                        "exif_aperture=COALESCE(?, exif_aperture), "
+                        "exif_shutter=COALESCE(?, exif_shutter), "
+                        "exif_exposure_comp=COALESCE(?, exif_exposure_comp) "
+                        "WHERE id=?",
+                        (
+                            exif.get("capture_time"),
+                            exif.get("camera"),
+                            exif.get("lens"),
+                            exif.get("focal_length"),
+                            exif.get("iso"),
+                            exif.get("aperture"),
+                            exif.get("shutter"),
+                            exif.get("exposure_comp"),
+                            r["id"],
+                        ),
                     )
                     updated += 1
                 else:

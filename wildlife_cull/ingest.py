@@ -11,26 +11,107 @@ from . import db, focus
 from .config import IMAGE_EXTS, RAW_EXTS, PREVIEW_DIR, PREVIEW_MAX_SIZE, THUMB_MAX_SIZE
 
 
-def extract_capture_time(src: Path) -> Optional[float]:
-    """Pull EXIF DateTimeOriginal via exiftool and return it as a Unix
-    timestamp. Falls back to None when exiftool isn't installed, the
-    file lacks EXIF, or the date is malformed. Burst detection needs
-    real capture time — file mtime is often wrong on copied archives."""
+_EXIF_TAGS = [
+    "DateTimeOriginal",
+    "Model",                 # camera body
+    "LensModel",             # lens (modern cameras)
+    "Lens",                  # lens (older cameras)
+    "FocalLength",           # "500.0 mm" or just "500"
+    "ISO",
+    "FNumber",               # aperture, "7.1" or "f/7.1"
+    "ShutterSpeed",          # "1/2000" preferred
+    "ExposureTime",          # fallback for ShutterSpeed
+    "ExposureCompensation",  # "+0.3" or "-1"
+]
+
+
+def _parse_float(s: str) -> Optional[float]:
+    """Parse '500.0 mm', 'f/7.1', '+0.3' etc. into a float. exiftool
+    formats vary across cameras; this is permissive."""
+    if not s:
+        return None
+    s = s.strip()
+    for prefix in ("f/", "F/", "f"):
+        if s.startswith(prefix):
+            s = s[len(prefix):]
+    for suffix in (" mm", "mm", " s", " sec"):
+        if s.endswith(suffix):
+            s = s[:-len(suffix)]
+    s = s.strip("+ ")
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _parse_int(s: str) -> Optional[int]:
+    v = _parse_float(s)
+    return int(v) if v is not None else None
+
+
+def extract_exif(src: Path) -> dict:
+    """Pull every EXIF field we care about in a single exiftool call.
+    Returns a dict with keys: capture_time (float unix ts), camera,
+    lens, focal_length (mm), iso, aperture (f-number), shutter (text
+    fraction), exposure_comp (EV). Missing fields are simply absent.
+
+    Single exiftool call per image keeps ingest fast — pulling 10 tags
+    is the same cost as pulling 1."""
+    args = ["exiftool", "-s3"]
+    for t in _EXIF_TAGS:
+        args.append(f"-{t}")
+    args.extend(["-d", "%Y-%m-%d %H:%M:%S", str(src)])
     try:
         result = subprocess.run(
-            ["exiftool", "-s3", "-DateTimeOriginal", "-d", "%Y-%m-%d %H:%M:%S", str(src)],
-            capture_output=True,
-            check=False,
-            timeout=5,
-            text=True,
+            args, capture_output=True, check=False, timeout=8, text=True,
         )
-        out = (result.stdout or "").strip()
-        if not out:
-            return None
-        dt = datetime.strptime(out, "%Y-%m-%d %H:%M:%S")
-        return dt.timestamp()
-    except (subprocess.TimeoutExpired, FileNotFoundError, ValueError, OSError):
-        return None
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return {}
+    out = (result.stdout or "").splitlines()
+    # exiftool with -s3 returns one value per line, in the same order
+    # as the tag flags. Missing tags become blank lines, which is why
+    # we walk by index instead of trying to be clever.
+    out = [line.strip() for line in out]
+    values = {}
+    for i, tag in enumerate(_EXIF_TAGS):
+        values[tag] = out[i] if i < len(out) else ""
+
+    parsed: dict = {}
+    if values.get("DateTimeOriginal"):
+        try:
+            dt = datetime.strptime(values["DateTimeOriginal"], "%Y-%m-%d %H:%M:%S")
+            parsed["capture_time"] = dt.timestamp()
+        except ValueError:
+            pass
+    if values.get("Model"):
+        parsed["camera"] = values["Model"]
+    lens = values.get("LensModel") or values.get("Lens")
+    if lens:
+        parsed["lens"] = lens
+    fl = _parse_float(values.get("FocalLength", ""))
+    if fl is not None:
+        parsed["focal_length"] = fl
+    iso = _parse_int(values.get("ISO", ""))
+    if iso is not None:
+        parsed["iso"] = iso
+    ap = _parse_float(values.get("FNumber", ""))
+    if ap is not None:
+        parsed["aperture"] = ap
+    # ShutterSpeed is already a nice fraction ("1/2000"); ExposureTime is
+    # the same value in decimal. Prefer the fraction for display.
+    sh = values.get("ShutterSpeed") or values.get("ExposureTime")
+    if sh:
+        parsed["shutter"] = sh
+    ec = _parse_float(values.get("ExposureCompensation", ""))
+    if ec is not None:
+        parsed["exposure_comp"] = ec
+    return parsed
+
+
+def extract_capture_time(src: Path) -> Optional[float]:
+    """Back-compat helper: still useful for the existing backfill, but
+    new code should call extract_exif() instead and use ['capture_time']."""
+    return extract_exif(src).get("capture_time")
 
 
 def iter_images(folder: Path, recursive: bool = True) -> Iterator[Path]:
@@ -156,7 +237,7 @@ def ingest_folder(folder: str, recursive: bool = True) -> dict:
             existing_rating = _read_existing_xmp_rating(img_path)
             f_score = focus.focus_score(preview)
             f_label = focus.focus_label(f_score)
-            cap = extract_capture_time(img_path)
+            exif = extract_exif(img_path)
 
             row = {
                 "path": str(img_path),
@@ -164,7 +245,14 @@ def ingest_folder(folder: str, recursive: bool = True) -> dict:
                 "folder": str(img_path.parent),
                 "file_size": stat.st_size,
                 "mtime": stat.st_mtime,
-                "capture_time": cap,
+                "capture_time": exif.get("capture_time"),
+                "exif_camera": exif.get("camera"),
+                "exif_lens": exif.get("lens"),
+                "exif_focal_length": exif.get("focal_length"),
+                "exif_iso": exif.get("iso"),
+                "exif_aperture": exif.get("aperture"),
+                "exif_shutter": exif.get("shutter"),
+                "exif_exposure_comp": exif.get("exposure_comp"),
                 "is_raw": 1 if img_path.suffix.lower() in RAW_EXTS else 0,
                 "preview_path": str(preview),
                 "thumb_path": str(thumb),

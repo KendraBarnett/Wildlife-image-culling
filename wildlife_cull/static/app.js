@@ -474,6 +474,48 @@ async function applyBulkTags() {
   }
 }
 
+function formatCaptureTime(ts) {
+  if (!ts) return null;
+  const d = new Date(ts * 1000);
+  if (isNaN(d.getTime())) return null;
+  // Local time, matches what the camera was set to.
+  return d.toLocaleString(undefined, {
+    year: "numeric", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit",
+  });
+}
+
+function formatExposureComp(v) {
+  if (v == null || v === 0) return null;
+  return (v > 0 ? "+" : "") + v.toFixed(1).replace(/\.0$/, "") + " EV";
+}
+
+function renderExifBlock(img) {
+  // Only render the section if we have at least one usable EXIF field.
+  const captured = formatCaptureTime(img.capture_time);
+  const cam = img.exif_camera;
+  const lens = img.exif_lens;
+  const fl = img.exif_focal_length != null ? `${img.exif_focal_length} mm` : null;
+  const ap = img.exif_aperture != null ? `f/${img.exif_aperture}` : null;
+  const sh = img.exif_shutter || null;
+  const iso = img.exif_iso != null ? `ISO ${img.exif_iso}` : null;
+  const ec = formatExposureComp(img.exif_exposure_comp);
+
+  const hasAny = captured || cam || lens || fl || ap || sh || iso || ec;
+  if (!hasAny) return "";
+
+  // Settings group rendered as a single tight line for scanability.
+  const settings = [fl, ap, sh, iso, ec].filter(Boolean).join(" · ");
+
+  return `<div class="exif-block">
+    <div class="exif-title">CAPTURE INFO</div>
+    ${captured ? `<div class="row"><span>Captured</span><strong>${esc(captured)}</strong></div>` : ""}
+    ${cam ? `<div class="row"><span>Camera</span><strong>${esc(cam)}</strong></div>` : ""}
+    ${lens ? `<div class="row"><span>Lens</span><strong>${esc(lens)}</strong></div>` : ""}
+    ${settings ? `<div class="row"><span>Settings</span><strong class="exif-settings">${esc(settings)}</strong></div>` : ""}
+  </div>`;
+}
+
 function getPrimaryAi(img) {
   // Returns the structured AI result for this image — Phase 1 triage's
   // primary judge result, or the legacy ai_json fallback. This is the
@@ -604,12 +646,15 @@ function renderAiBlock(img) {
         <span class="claude-cost-hint">~1¢ per image</span>
       </div>`;
 
+  const exifBlock = renderExifBlock(img);
+
   el.innerHTML = `
     <div class="triage-header">
       <div class="triage-keep">${keepBadge}</div>
       <div class="triage-model muted">${esc(triageModel)}</div>
     </div>
     ${claudeBlock}
+    ${exifBlock}
     ${img.burst_id ? `<div class="row"><span>Burst</span><strong>#${img.burst_id} · ${esc(pretty(img.burst_role || ""))}</strong></div>` : ""}
     <div class="row"><span>Type</span><strong>${esc(a.animal_type) || "—"}</strong></div>
     <div class="row"><span>Species</span><strong>${esc(a.species) || "—"}</strong></div>
@@ -925,11 +970,10 @@ document.addEventListener("DOMContentLoaded", () => {
   };
   $("#backfill-capture-times").onclick = async () => {
     if (!confirm(
-      "Read EXIF DateTimeOriginal for every image that doesn't have a "
-      + "capture time yet?\n\n"
-      + "Burst detection uses real capture times when available — file "
-      + "modification times are often wrong on copied archives. Slow on "
-      + "first run (one exiftool call per image) but only has to happen once."
+      "Read EXIF for every image that doesn't have it yet?\n\n"
+      + "Pulls capture time, camera, lens, focal length, ISO, aperture, "
+      + "shutter speed, and exposure compensation. Slow on first run "
+      + "(one exiftool call per image) but only has to happen once."
     )) return;
     const btn = $("#backfill-capture-times");
     btn.disabled = true;
@@ -937,7 +981,9 @@ document.addEventListener("DOMContentLoaded", () => {
     btn.textContent = "Reading EXIF…";
     try {
       const r = await jpost("/api/admin/backfill-capture-times");
-      alert(`Scanned ${r.scanned} images, updated ${r.updated}, ${r.skipped} had no EXIF (${r.elapsed_sec}s).`);
+      const failedStr = r.failed ? `, ${r.failed} failed` : "";
+      alert(`Scanned ${r.scanned} images, updated ${r.updated}, ${r.skipped} had no EXIF${failedStr} (${r.elapsed_sec}s).`);
+      refreshGrid();
     } catch (e) {
       alert("Backfill failed: " + e.message);
     } finally {

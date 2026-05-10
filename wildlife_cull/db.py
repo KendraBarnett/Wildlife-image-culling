@@ -16,6 +16,13 @@ CREATE TABLE IF NOT EXISTS images (
     file_size INTEGER,
     mtime REAL,
     capture_time REAL,
+    exif_camera TEXT,
+    exif_lens TEXT,
+    exif_focal_length REAL,
+    exif_iso INTEGER,
+    exif_aperture REAL,
+    exif_shutter TEXT,
+    exif_exposure_comp REAL,
     is_raw INTEGER NOT NULL DEFAULT 0,
     preview_path TEXT,
     thumb_path TEXT,
@@ -126,6 +133,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
         ("claude_output_tokens", "ALTER TABLE images ADD COLUMN claude_output_tokens INTEGER"),
         ("claude_cache_read_tokens", "ALTER TABLE images ADD COLUMN claude_cache_read_tokens INTEGER"),
         ("claude_cost_usd", "ALTER TABLE images ADD COLUMN claude_cost_usd REAL"),
+        ("exif_camera", "ALTER TABLE images ADD COLUMN exif_camera TEXT"),
+        ("exif_lens", "ALTER TABLE images ADD COLUMN exif_lens TEXT"),
+        ("exif_focal_length", "ALTER TABLE images ADD COLUMN exif_focal_length REAL"),
+        ("exif_iso", "ALTER TABLE images ADD COLUMN exif_iso INTEGER"),
+        ("exif_aperture", "ALTER TABLE images ADD COLUMN exif_aperture REAL"),
+        ("exif_shutter", "ALTER TABLE images ADD COLUMN exif_shutter TEXT"),
+        ("exif_exposure_comp", "ALTER TABLE images ADD COLUMN exif_exposure_comp REAL"),
     ]:
         if name not in cols:
             conn.execute(ddl)

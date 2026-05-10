@@ -477,6 +477,8 @@ def api_images(
         "focus_score, focus_label, burst_id, burst_role, "
         "claude_technical_score, claude_aesthetic_score, claude_reasoning, "
         "claude_scored_at, claude_cost_usd, "
+        "capture_time, exif_camera, exif_lens, exif_focal_length, "
+        "exif_iso, exif_aperture, exif_shutter, exif_exposure_comp, "
         "user_rating, user_tags, user_notes "
         f"FROM images {where_sql} ORDER BY filename LIMIT ? OFFSET ?"
     )
