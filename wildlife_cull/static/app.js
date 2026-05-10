@@ -4,6 +4,7 @@ const state = {
   filterRating: "",
   current: null,
   saveTimer: null,
+  browse: { path: "", parent: null, dirs: [], isRoot: true },
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -250,6 +251,52 @@ function step(delta) {
   if (next) openModal(next.id);
 }
 
+async function openBrowser(path) {
+  const url = path ? `/api/browse?path=${encodeURIComponent(path)}` : "/api/browse";
+  let data;
+  try {
+    data = await jget(url);
+  } catch (e) {
+    alert("Could not list folder: " + e.message);
+    return;
+  }
+  state.browse = {
+    path: data.path || "",
+    parent: data.parent_path,
+    dirs: data.dirs || [],
+    isRoot: !!data.is_root,
+  };
+  $("#browse-path").textContent = data.is_root ? "Choose a starting location" : data.path;
+  $("#browse-up").disabled = !!data.is_root;
+  $("#browse-select").disabled = !!data.is_root;
+
+  const list = $("#browse-list");
+  list.innerHTML = "";
+  if (!data.dirs.length) {
+    const empty = document.createElement("div");
+    empty.className = "browse-empty";
+    empty.textContent = data.is_root
+      ? "No starting locations available."
+      : "No sub-folders here. Click \"Use this folder\" to ingest this one.";
+    list.appendChild(empty);
+  } else {
+    for (const d of data.dirs) {
+      const row = document.createElement("button");
+      row.className = "browse-row";
+      row.title = d.path;
+      row.innerHTML = `<span class="folder-icon">📁</span><span class="folder-name"></span>`;
+      row.querySelector(".folder-name").textContent = d.name;
+      row.onclick = () => openBrowser(d.path);
+      list.appendChild(row);
+    }
+  }
+  $("#browse-modal").classList.remove("hidden");
+}
+
+function closeBrowser() {
+  $("#browse-modal").classList.add("hidden");
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   $("#ingest-btn").onclick = async () => {
     const folder = $("#folder-input").value.trim();
@@ -292,7 +339,27 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#prev-btn").onclick = () => step(-1);
   $("#next-btn").onclick = () => step(1);
 
+  $("#browse-btn").onclick = () => {
+    const current = $("#folder-input").value.trim();
+    openBrowser(current || null);
+  };
+  $("#browse-close").onclick = closeBrowser;
+  $("#browse-cancel").onclick = closeBrowser;
+  $("#browse-up").onclick = () => {
+    if (state.browse.parent) openBrowser(state.browse.parent);
+    else openBrowser(null);
+  };
+  $("#browse-select").onclick = () => {
+    if (!state.browse.path) return;
+    $("#folder-input").value = state.browse.path;
+    closeBrowser();
+  };
+
   document.addEventListener("keydown", (e) => {
+    if (!$("#browse-modal").classList.contains("hidden")) {
+      if (e.key === "Escape") closeBrowser();
+      return;
+    }
     if ($("#modal").classList.contains("hidden")) return;
     if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") return;
     if (e.key === "Escape") closeModal();

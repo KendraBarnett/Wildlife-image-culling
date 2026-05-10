@@ -15,11 +15,16 @@ Your browser opens to the app.
 
 ## 2. Ingest a folder
 
-At the top of the page there's a long text box and a blue **Ingest** button.
-Put the full path to the folder you want to cull into the text box, then
-click **Ingest**.
+At the top of the page there's a long text box, a **Browse…** button, a
+**recursive** checkbox, and a blue **Ingest** button.
 
-Three easy ways to get a folder path on a Mac (pick whichever you like):
+The easiest way: click **Browse…**. A folder picker opens starting at your
+home folder and any mounted volumes (SD cards show up under "Volume:"). Click
+through to the folder you want, then click **Use this folder**. The path
+fills into the text box automatically. Then click **Ingest**.
+
+If you'd rather skip the picker, you can also put a path into the text box
+directly:
 
 - **Drag-and-drop:** open Finder, find the folder, and drag the folder icon
   directly into the text box in your browser. The full path appears

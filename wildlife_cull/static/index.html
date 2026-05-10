@@ -14,10 +14,29 @@
 
   <section id="ingest-bar">
     <input id="folder-input" type="text" placeholder="/Volumes/SDCARD/DCIM/100EOSR5  or  ~/Photos/2026-05-09 Owls" spellcheck="false" />
+    <button id="browse-btn" class="secondary">Browse…</button>
     <label class="recursive"><input id="recursive" type="checkbox" checked /> recursive</label>
     <button id="ingest-btn">Ingest</button>
     <span id="ingest-status"></span>
   </section>
+
+  <div id="browse-modal" class="modal hidden" role="dialog" aria-label="Choose folder">
+    <div class="browse-content">
+      <div class="browse-header">
+        <button id="browse-up" title="Up one level">↑</button>
+        <span id="browse-path" class="browse-path">—</span>
+        <button id="browse-close" class="close" title="Close">&times;</button>
+      </div>
+      <div id="browse-list" class="browse-list"></div>
+      <div class="browse-footer">
+        <span class="browse-hint">Click a folder to open it. Click "Use this folder" to ingest the one you're currently in.</span>
+        <div class="browse-actions">
+          <button id="browse-cancel" class="secondary">Cancel</button>
+          <button id="browse-select">Use this folder</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <section id="folders-bar"></section>
 

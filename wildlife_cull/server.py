@@ -58,6 +58,44 @@ def api_ingest(req: IngestReq) -> dict:
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.get("/api/browse")
+def api_browse(path: Optional[str] = None) -> dict:
+    if not path:
+        home = Path.home()
+        entries = [{"name": f"Home  ({home.name})", "path": str(home)}]
+        volumes = Path("/Volumes")
+        if volumes.exists():
+            for v in sorted(volumes.iterdir(), key=lambda x: x.name.lower()):
+                if v.is_dir() and not v.name.startswith("."):
+                    entries.append({"name": f"Volume:  {v.name}", "path": str(v)})
+        users = Path("/Users")
+        if users.exists():
+            entries.append({"name": "/Users", "path": "/Users"})
+        return {"path": "", "parent_path": None, "dirs": entries, "is_root": True}
+
+    p = Path(path).expanduser()
+    try:
+        p = p.resolve()
+    except Exception:
+        raise HTTPException(status_code=400, detail=f"Cannot resolve path: {path}")
+    if not p.is_dir():
+        raise HTTPException(status_code=400, detail=f"Not a directory: {p}")
+
+    dirs = []
+    try:
+        for entry in sorted(p.iterdir(), key=lambda x: x.name.lower()):
+            try:
+                if entry.is_dir() and not entry.name.startswith("."):
+                    dirs.append({"name": entry.name, "path": str(entry)})
+            except (PermissionError, OSError):
+                continue
+    except PermissionError:
+        raise HTTPException(status_code=403, detail=f"Permission denied: {p}")
+
+    parent = str(p.parent) if p.parent != p else None
+    return {"path": str(p), "parent_path": parent, "dirs": dirs, "is_root": False}
+
+
 @app.get("/api/folders")
 def api_folders() -> list[dict]:
     with db.connect() as conn:
