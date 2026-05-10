@@ -6,7 +6,7 @@ from typing import Iterator, Optional
 
 from PIL import Image, ImageOps
 
-from . import db
+from . import db, focus
 from .config import IMAGE_EXTS, RAW_EXTS, PREVIEW_DIR, PREVIEW_MAX_SIZE, THUMB_MAX_SIZE
 
 
@@ -131,6 +131,8 @@ def ingest_folder(folder: str, recursive: bool = True) -> dict:
                 continue
 
             existing_rating = _read_existing_xmp_rating(img_path)
+            f_score = focus.focus_score(preview)
+            f_label = focus.focus_label(f_score)
 
             row = {
                 "path": str(img_path),
@@ -141,6 +143,8 @@ def ingest_folder(folder: str, recursive: bool = True) -> dict:
                 "is_raw": 1 if img_path.suffix.lower() in RAW_EXTS else 0,
                 "preview_path": str(preview),
                 "thumb_path": str(thumb),
+                "focus_score": f_score,
+                "focus_label": f_label,
                 "width": w,
                 "height": h,
                 "ingested_at": time.time(),

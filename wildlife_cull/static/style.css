@@ -112,6 +112,11 @@ body.select-mode .card:hover { outline: 2px solid var(--accent); }
 .card .badge.good { color: var(--good); }
 .card .badge.warn { color: var(--warn); }
 .card .badge.silh { color: var(--portfolio); }
+.card .badge.bad { color: var(--bad); background: rgba(255, 100, 100, 0.18); border: 1px solid rgba(255, 100, 100, 0.5); }
+.card .badge.burst-best { color: var(--accent); background: rgba(120, 180, 255, 0.18); border: 1px solid rgba(120, 180, 255, 0.5); }
+.card .badge.burst-alt { color: var(--muted); background: var(--panel-2); }
+.card.burst-alt-card { opacity: 0.65; }
+.muted { color: var(--muted); font-weight: 400; font-size: 11px; }
 .card .rating-overlay { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(to top, rgba(0,0,0,0.85), transparent); padding: 6px 8px; display: flex; justify-content: space-between; align-items: center; }
 .card .rating-overlay .stars-mini { color: var(--warn); letter-spacing: 1px; }
 .card .rating-overlay .scores { color: var(--muted); font-size: 11px; }

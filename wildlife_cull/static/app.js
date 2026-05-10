@@ -142,6 +142,8 @@ function readFilters() {
     "filter-silhouette": "silhouette",
     "filter-issue": "has_issue",
     "filter-feedback": "has_feedback",
+    "filter-focus": "focus",
+    "filter-burst": "burst_only",
     "filter-subject": "subject_contains",
     "filter-min-artistic": "min_artistic",
     "filter-min-portfolio": "min_portfolio",
@@ -191,13 +193,16 @@ function renderCard(img) {
 
   const badges = document.createElement("div");
   badges.className = "badges";
+  if (img.focus_label === "out_of_focus") badges.appendChild(badge("OOF", "bad"));
+  else if (img.focus_label === "soft") badges.appendChild(badge("soft", "warn"));
+  else if (img.focus_label === "very_sharp") badges.appendChild(badge("sharp+", "good"));
   if (img.ai_status === "done") {
-    if (img.ai_eye_focus === "sharp") badges.appendChild(badge("eye✓", "good"));
-    else if (img.ai_eye_focus === "soft") badges.appendChild(badge("eye~", "warn"));
     if (img.ai_motion === "in_motion") badges.appendChild(badge("motion", "good"));
     else if (img.ai_motion === "blurred") badges.appendChild(badge("blur", "warn"));
     if (img.ai_is_silhouette) badges.appendChild(badge("silh", "silh"));
   }
+  if (img.burst_role === "best") badges.appendChild(badge(`★ best of #${img.burst_id}`, "burst-best"));
+  else if (img.burst_role === "alt") badges.appendChild(badge(`burst #${img.burst_id}`, "burst-alt"));
   card.appendChild(badges);
 
   const overlay = document.createElement("div");
@@ -347,6 +352,8 @@ function renderAiBlock(img) {
 
   el.innerHTML = `
     <div class="judges-row">${cards}</div>
+    <div class="row"><span>Sharpness</span><strong>${img.focus_label ? esc(pretty(img.focus_label)) : "—"}${img.focus_score != null ? ` <span class="muted">(${Math.round(img.focus_score)})</span>` : ""}</strong></div>
+    ${img.burst_id ? `<div class="row"><span>Burst</span><strong>#${img.burst_id} · ${esc(pretty(img.burst_role || ""))}</strong></div>` : ""}
     <div class="row"><span>Type</span><strong>${esc(a.animal_type) || "—"}</strong></div>
     <div class="row"><span>Species</span><strong>${esc(a.species) || "—"}</strong></div>
     <div class="row"><span>Subject</span><strong>${esc(a.subject) || "—"}</strong></div>
@@ -588,7 +595,7 @@ document.addEventListener("DOMContentLoaded", () => {
   for (const id of [
     "filter-ai-status", "filter-animal-type", "filter-eye-focus", "filter-motion",
     "filter-composition", "filter-lighting", "filter-silhouette", "filter-issue",
-    "filter-feedback",
+    "filter-feedback", "filter-focus", "filter-burst",
   ]) {
     $("#" + id).onchange = refreshGrid;
   }
@@ -599,6 +606,21 @@ document.addEventListener("DOMContentLoaded", () => {
       t = setTimeout(refreshGrid, 250);
     };
   }
+  $("#recompute-bursts").onclick = async () => {
+    if (!state.folder) {
+      alert("Pick a folder first (top of the page) — burst grouping operates on one folder at a time.");
+      return;
+    }
+    $("#ingest-status").textContent = "Finding bursts…";
+    try {
+      const r = await jpost("/api/bursts/recompute", { folder: state.folder });
+      $("#ingest-status").textContent = `${r.bursts} burst(s) · ${r.images_in_bursts} frames in bursts (${r.elapsed_sec}s)`;
+      refreshGrid();
+    } catch (e) {
+      $("#ingest-status").textContent = "Burst find failed: " + e.message;
+    }
+  };
+
   $("#filter-clear").onclick = () => {
     state.filterRating = "";
     $("#filter-rating").value = "";
@@ -606,6 +628,7 @@ document.addEventListener("DOMContentLoaded", () => {
       "filter-ai-status", "filter-animal-type", "filter-species",
       "filter-eye-focus", "filter-motion", "filter-composition",
       "filter-lighting", "filter-silhouette", "filter-issue", "filter-feedback",
+      "filter-focus", "filter-burst",
       "filter-subject", "filter-min-artistic", "filter-min-portfolio",
     ]) {
       $("#" + id).value = "";

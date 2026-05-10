@@ -96,6 +96,23 @@
       <option value="yes">Has my corrections</option>
       <option value="no">No corrections</option>
     </select>
+    <label>Focus:</label>
+    <select id="filter-focus">
+      <option value="">Any</option>
+      <option value="very_sharp">Very sharp</option>
+      <option value="sharp">Sharp</option>
+      <option value="soft">Soft</option>
+      <option value="out_of_focus">Out of focus</option>
+    </select>
+    <label>Bursts:</label>
+    <select id="filter-burst">
+      <option value="">All</option>
+      <option value="best">Best of burst</option>
+      <option value="alts">Alts only</option>
+      <option value="in_burst">Any burst frame</option>
+      <option value="singletons">Singletons</option>
+    </select>
+    <button id="recompute-bursts" class="secondary" title="Group similar consecutive frames into bursts and pick the sharpest of each">Find bursts</button>
     <label>Subject contains:</label>
     <input id="filter-subject" type="text" placeholder="owl, gorilla…" />
     <label>Artistic ≥</label>

@@ -38,6 +38,10 @@ CREATE TABLE IF NOT EXISTS images (
     ai_analyzed_at REAL,
     ai_judges_json TEXT,
     ai_feedback_json TEXT,
+    focus_score REAL,
+    focus_label TEXT,
+    burst_id INTEGER,
+    burst_role TEXT,
 
     embedding BLOB,
     embedding_model TEXT,
@@ -77,9 +81,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
         ("ai_species", "ALTER TABLE images ADD COLUMN ai_species TEXT"),
         ("ai_judges_json", "ALTER TABLE images ADD COLUMN ai_judges_json TEXT"),
         ("ai_feedback_json", "ALTER TABLE images ADD COLUMN ai_feedback_json TEXT"),
+        ("focus_score", "ALTER TABLE images ADD COLUMN focus_score REAL"),
+        ("focus_label", "ALTER TABLE images ADD COLUMN focus_label TEXT"),
+        ("burst_id", "ALTER TABLE images ADD COLUMN burst_id INTEGER"),
+        ("burst_role", "ALTER TABLE images ADD COLUMN burst_role TEXT"),
     ]:
         if name not in cols:
             conn.execute(ddl)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_images_burst ON images(burst_id)")
 
 
 @contextmanager

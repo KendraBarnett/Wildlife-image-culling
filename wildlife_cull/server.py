@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import ai, db, ingest, xmp
+from . import ai, bursts, db, ingest, xmp
 from .config import SERVER_HOST, SERVER_PORT, VISION_MODEL
 from .worker import BackgroundWorker
 
@@ -141,6 +141,20 @@ def api_ai_vocab() -> dict:
     return ai.AI_VOCAB
 
 
+class BurstReq(BaseModel):
+    folder: str
+
+
+@app.post("/api/bursts/recompute")
+def api_bursts_recompute(req: BurstReq) -> dict:
+    return bursts.recompute_bursts_for_folder(req.folder)
+
+
+@app.get("/api/bursts")
+def api_bursts(folder: str) -> dict:
+    return {"bursts": bursts.list_bursts(folder)}
+
+
 @app.get("/api/judges")
 def api_judges() -> list[dict]:
     return [
@@ -166,6 +180,8 @@ def api_images(
     subject_contains: Optional[str] = None,
     has_issue: Optional[str] = None,
     has_feedback: Optional[str] = None,
+    focus: Optional[str] = None,
+    burst_only: Optional[str] = None,
     min_artistic: Optional[int] = None,
     min_portfolio: Optional[int] = None,
     limit: int = Query(default=500, le=2000),
@@ -218,6 +234,17 @@ def api_images(
         where.append("ai_feedback_json IS NOT NULL")
     elif has_feedback == "no":
         where.append("ai_feedback_json IS NULL")
+    if focus:
+        where.append("focus_label=?")
+        params.append(focus)
+    if burst_only == "best":
+        where.append("burst_role='best'")
+    elif burst_only == "alts":
+        where.append("burst_role='alt'")
+    elif burst_only == "in_burst":
+        where.append("burst_id IS NOT NULL")
+    elif burst_only == "singletons":
+        where.append("burst_id IS NULL")
     if min_artistic is not None:
         where.append("ai_artistic_score >= ?")
         params.append(min_artistic)
@@ -231,6 +258,7 @@ def api_images(
         "ai_eye_focus, ai_motion, ai_composition, ai_lighting, "
         "ai_is_silhouette, ai_subject, ai_animal_type, ai_species, "
         "ai_technical_issues, ai_judges_json, ai_feedback_json, "
+        "focus_score, focus_label, burst_id, burst_role, "
         "user_rating, user_tags, user_notes "
         f"FROM images {where_sql} ORDER BY filename LIMIT ? OFFSET ?"
     )
