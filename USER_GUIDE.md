@@ -1,6 +1,8 @@
 # Day-to-day use
 
-This is the flow once setup is done.
+This is the flow once setup is done. The tool runs in two phases — Phase 1
+triages every image locally (free, automatic); Phase 2 scores keepers with
+Claude when you tell it to (real money, you control the cap).
 
 ## 1. Start the app
 
@@ -8,95 +10,153 @@ Open Terminal, then:
 
 ```
 cd ~/Documents/wildlife-image-culling
-./scripts/run.sh
+caffeinate -dimsu ./scripts/run.sh
 ```
+
+`caffeinate` keeps macOS from throttling background work — without it the
+analysis pauses every time you switch away from the terminal.
 
 Your browser opens to the app.
 
 ## 2. Ingest a folder
 
-At the top of the page there's a long text box, a **Browse…** button, a
-**recursive** checkbox, and a blue **Ingest** button.
+Top of the page: a text box, a **Browse…** button, a **recursive**
+checkbox, and a blue **Ingest** button.
 
-The easiest way: click **Browse…**. A folder picker opens starting at your
-home folder and any mounted volumes (SD cards show up under "Volume:"). Click
-through to the folder you want, then click **Use this folder**. The path
-fills into the text box automatically. Then click **Ingest**.
+The easiest way: click **Browse…**. A folder picker opens at your home
+folder; mounted volumes (SD cards) show up under "Volume:". Click
+through, click **Use this folder**, then **Ingest**.
 
-If you'd rather skip the picker, you can also put a path into the text box
-directly:
-
-- **Drag-and-drop:** open Finder, find the folder, and drag the folder icon
-  directly into the text box in your browser. The full path appears
-  automatically.
-- **Copy as Pathname:** in Finder, right-click the folder, hold the
-  **Option (⌥)** key, and the menu changes — pick **"Copy [folder name] as
-  Pathname"**. Then paste into the text box with ⌘V.
-- **Type it:** for obvious locations, just type. Examples:
-  - An SD card mount: `/Volumes/EOS_R5/DCIM/100EOSR5`
-  - A shoot folder on disk: `~/Pictures/2026-05-09 Owls`
-  - An old archive: `~/Pictures/Archive/2019`
-
-The **recursive** checkbox (on by default) tells the app to walk into
-sub-folders too. Leave it on unless you have a specific reason not to.
+You can also paste a path directly. From Finder, right-click the folder,
+hold **Option (⌥)**, choose **"Copy [folder name] as Pathname"**, paste
+into the text box.
 
 Click **Ingest**. The app:
 
-1. Scans the folder for image files (CR3, NEF, ARW, RAF, ORF, DNG, JPG, JPEG,
-   HEIC).
-2. Extracts a fast preview for every file.
-3. Queues each image for AI analysis.
+1. Scans for image files (CR3, NEF, ARW, RAF, ORF, DNG, JPG, JPEG, HEIC).
+2. Extracts a preview from each one (fast — embedded JPEG from RAW).
+3. Queues each image for Phase 1 triage.
 
-You'll immediately see a grid of every image. AI scores fill in over the next
-few minutes as the vision model works through them. **You don't have to wait
-— start culling the ones that already have scores.**
+You'll immediately see a grid of every image. The triage results fill in
+over the next ~30–60 seconds per image as the local model works through
+them. **You don't have to wait** — start culling the ones already done.
 
-> The AI processes about 4–8 images per minute on an M4 Pro. A 500-image shoot
-> takes ~75 minutes of background time. You can leave it running and come back.
-
-## 3. Review and rate
+## 3. Phase 1 — read the triage verdicts
 
 Each thumbnail shows:
 
 - The image
-- AI's suggested **artistic score** and **portfolio score** (1–10)
-- A small badge for eye focus and motion
-- Your current rating (empty until you rate it)
+- A **KEEP** badge (green) or **cull** badge (red), once triaged
+- Smaller badges for in-focus / motion / silhouette state
+- Your star rating (empty until you rate)
 
-Click any thumbnail to open the **detail view**:
+Click any thumbnail to open the **detail view**. You'll see:
 
 - Larger image
-- Full AI judgment (subject, composition, lighting, technical issues, notes)
-- **Star rating** 1–5 (click the stars, or press 1–5 on your keyboard)
-- **Tag chips**: Keep / Portfolio / Reject / Silhouette-Intentional /
-  Eyes-Sharp / Soft-Focus
-- A free-text **notes** field for your own comments
+- The **KEEP / DON'T KEEP** verdict at the top, with the triage model name
+- A **"Score with Claude"** button (more on this in step 4)
+- Structured fields: type, species, subject, in-focus, eye focus, motion,
+  composition, lighting, silhouette, issues
+- The model's notes — what it sees and why it called keep or cull
+- Your 1–5 stars, tag chips, free-text notes
+- A **"Train your eye"** dropdown where you can correct the AI
 
-Use the arrow keys (← →) to move between images without leaving the detail view.
+Use **← →** to move between images without leaving detail view.
 
-## 4. Save / sidecars
+## 4. Phase 2 — score keepers with Claude (optional, costs money)
 
-You don't need to click save — every rating change is auto-saved to the local
-database **and** to an XMP sidecar file next to the original image.
+Once Phase 1 has triaged the shoot, you have a stack of keepers worth a
+closer look. Phase 2 is where Claude Sonnet 4.6 ranks them.
 
-Example: rating `IMG_1234.CR3` writes `IMG_1234.CR3.xmp` into the same folder.
-When you later open the folder in Lightroom or Capture One, your rating and
-keywords are already there.
+There are two ways to trigger it:
 
-## 5. Use the AI's hint, but trust your eye
+**Per-image:** open a keeper in detail view, click the **"Score with
+Claude"** button. About 3–6 seconds later you'll see two scores:
 
-The Phase 1 AI is generic — it knows what "eye sharpness" and "good
-composition" mean, but it doesn't know your taste yet. **The AI's score is a
-hint, not a verdict.** Use it to spot things to look at carefully (like
-"high portfolio score on a frame I would have skipped"), but you always make
-the final call.
+- **Technical** (1–10) — how well-executed: eye sharpness, exposure,
+  noise, framing, motion handling.
+- **Aesthetic** (1–10) — how distinctive: light, behavior, moment,
+  composition, story. These two scores measure different things and
+  usually differ.
+- A one-sentence rationale.
 
-In Phase 3 we'll start training a personal model on your ratings, and the
-AI's scores will start matching your taste.
+Cost is ~1¢ per image. Use this when you want to spot-check a few before
+committing to a bulk run.
 
-## 6. Stop the app
+**Bulk:** in the bulk bar above the grid, click **"Score all keepers with
+Claude"**. This walks every image marked `keep=yes` that isn't scored yet,
+calling Claude on each one. Live progress shows up next to the button:
 
-Switch to Terminal, press **Control + C**. Done.
+```
+Scoring 23/87 · $0.18 this run · IMG_1234.JPG
+```
+
+A **Stop scoring** button appears while it's running. You can leave the
+page running; refreshing or closing the browser tab doesn't stop the
+backend job.
+
+## 5. The budget pill — your spending guard
+
+In the header you'll see a budget pill:
+
+```
+Claude: $0.0247 of $5.00 · 7 scored · 0.5%
+```
+
+It's **green** under 80%, **yellow** at 80–99%, **red** at 100%.
+
+- **At any point under 100%:** scoring works normally.
+- **At 100%:** the "Score with Claude" buttons stop firing. Per-image
+  attempts get an error; bulk runs stop gracefully with a "Budget cap
+  hit" message.
+
+To lift the cap: open `scripts/run.sh`, raise `CLAUDE_BUDGET_USD`, restart.
+
+If you see **"Claude: API key not set"** in gray instead, edit
+`scripts/run.sh` and uncomment / set your `ANTHROPIC_API_KEY` line.
+
+## 6. Filter to find your portfolio picks
+
+The filter bar above the grid has all the usual fields plus:
+
+- **Keep** — show only keepers (or only culls).
+- **Claude scored** — show only what's been through Phase 2.
+- **Technical ≥** / **Aesthetic ≥** — numeric cutoffs on the Claude
+  scores.
+
+A typical workflow: filter `Keep = yes` and `Aesthetic ≥ 7` to surface
+the strongest frames in the shoot.
+
+## 7. Star ratings and tags
+
+You don't need to click save — every rating, tag, and note change is
+auto-saved to the local database **and** to an XMP sidecar file next to
+the original.
+
+Example: rating `IMG_1234.CR3` writes `IMG_1234.CR3.xmp` into the same
+folder. When you later open that folder in Lightroom or Capture One, the
+ratings and keywords are already there.
+
+## 8. Train the triage model on your taste
+
+The local triage model is generic — it knows what "in focus" and "good
+composition" mean, but it doesn't know you. When it gets a call wrong,
+correct it: open the image, expand **"Train your eye on this image —
+correct the AI"**, set the right values, write one sentence about what
+it got wrong, hit **Save corrections**.
+
+After ~5 corrections, the triage model starts seeing your most recent
+corrections as examples on every future analysis. The header pill shows
+`trained on N of your corrections` when this is live.
+
+This loop is for Phase 1 only — Claude (Phase 2) uses a fixed scoring
+rubric. The way to influence Claude scores is to be selective about which
+images you mark keep before kicking off a bulk run.
+
+## 9. Stop the app
+
+Switch to the Terminal window where `run.sh` is running, press
+**Control + C**. Done.
 
 ---
 
@@ -104,11 +164,18 @@ Switch to Terminal, press **Control + C**. Done.
 
 - **Big imports first:** the first time you run this on an old archive of
   thousands of photos, ingest one folder at a time so the queue stays
-  manageable. Once a folder is ingested, the work is saved — closing the app
-  doesn't lose progress.
-- **Already culled in Lightroom?** Existing XMP sidecar ratings are read on
-  ingest and shown as your starting rating. The AI fills in tags and notes
-  around them.
-- **Where's the database?** A single file at
-  `~/Documents/wildlife-image-culling/data/cull.db`. Back it up the same way
-  you back up Lightroom catalogs.
+  manageable. Progress is saved between sessions — closing doesn't lose
+  work.
+- **Spot-check before bulk:** before clicking "Score all keepers," try
+  per-image Claude scoring on 3–5 representative images. If the scores
+  feel right, run the bulk; if they don't, that's free signal before
+  you've spent any real money.
+- **The cull is the cost saver:** the more selective Phase 1 is about
+  what counts as a keeper, the cheaper Phase 2 runs are. If you're
+  finding too many marginal frames going to Claude, raise the bar in
+  the triage corrections.
+- **Already culled in Lightroom?** Existing XMP sidecar ratings are read
+  on ingest and shown as your starting rating.
+- **Where's the data?** A single file at
+  `~/Documents/wildlife-image-culling/data/cull.db`. Back it up like a
+  Lightroom catalog.
