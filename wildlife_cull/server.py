@@ -123,6 +123,48 @@ def api_refresh_sidecars() -> dict:
     }
 
 
+class FolderPathReq(BaseModel):
+    folder: str
+
+
+@app.post("/api/folders/drop-previews")
+def api_drop_previews_for_folder(req: FolderPathReq) -> dict:
+    """Delete cached previews and thumbnails for every image in this
+    folder. The AI data, embeddings, ratings, tags, and XMP sidecars
+    stay intact — only the local JPEG cache goes. Previews re-extract
+    on demand the next time you open an image in this folder. Use this
+    on shoots you're done with to reclaim disk."""
+    removed = 0
+    bytes_freed = 0
+    with db.connect() as conn:
+        rows = conn.execute(
+            "SELECT id, preview_path, thumb_path FROM images WHERE folder=?",
+            (req.folder,),
+        ).fetchall()
+        for r in rows:
+            for p in (r["preview_path"], r["thumb_path"]):
+                if not p:
+                    continue
+                try:
+                    path = Path(p)
+                    if path.exists():
+                        bytes_freed += path.stat().st_size
+                        path.unlink()
+                        removed += 1
+                except OSError:
+                    pass
+        conn.execute(
+            "UPDATE images SET preview_path=NULL, thumb_path=NULL WHERE folder=?",
+            (req.folder,),
+        )
+    return {
+        "ok": True,
+        "folder": req.folder,
+        "files_removed": removed,
+        "mb_freed": round(bytes_freed / (1024 * 1024), 1),
+    }
+
+
 @app.post("/api/admin/clear-previews")
 def api_clear_previews() -> dict:
     """Delete every cached preview/thumb file and null out preview_path in

@@ -20,7 +20,13 @@ RAW_EXTS = {".cr3", ".cr2", ".nef", ".arw", ".raf", ".orf", ".rw2", ".dng", ".pe
 JPEG_EXTS = {".jpg", ".jpeg", ".heic", ".heif", ".png", ".tif", ".tiff"}
 IMAGE_EXTS = RAW_EXTS | JPEG_EXTS
 
-PREVIEW_MAX_SIZE = 1600
+# Preview size — used for the modal image AND as input to the local AI.
+# 1024px matches what we resize to before sending to qwen2.5vl anyway,
+# so going bigger only wastes disk. 1024px JPEG q85 is roughly 30-50 KB
+# vs 80-120 KB at 1600px — about half the disk for ~5k images.
+# Override with WC_PREVIEW_MAX_SIZE if you want larger previews for
+# modal pixel-peeping (at the cost of disk).
+PREVIEW_MAX_SIZE = int(os.environ.get("WC_PREVIEW_MAX_SIZE", "1024"))
 THUMB_MAX_SIZE = 400
 
 # Phase 2 — Claude API scoring (on-demand only)

@@ -950,6 +950,27 @@ document.addEventListener("DOMContentLoaded", () => {
       btn.textContent = orig;
     }
   };
+  $("#drop-folder-previews").onclick = async () => {
+    if (!state.folder) {
+      alert("Select a specific folder tab first — this drops previews for one folder at a time.");
+      return;
+    }
+    const short = state.folder.split("/").slice(-2).join("/");
+    if (!confirm(
+      `Delete cached previews for "${short}"?\n\n`
+      + "AI analysis, Claude scores, ratings, tags, and XMP sidecars "
+      + "all stay intact — only the local JPEG cache for this folder "
+      + "goes. Previews re-extract on demand when you next open one."
+    )) return;
+    try {
+      const r = await jpost("/api/folders/drop-previews", { folder: state.folder });
+      alert(`Removed ${r.files_removed} files, freed ${r.mb_freed} MB from ${short}.`);
+      refreshPreviewStats();
+      refreshGrid();
+    } catch (e) {
+      alert("Drop failed: " + e.message);
+    }
+  };
   $("#clear-previews").onclick = async () => {
     const stats = await jget("/api/admin/preview-stats").catch(() => null);
     const sizeNote = stats ? ` (${stats.file_count} files, ${stats.gb} GB)` : "";

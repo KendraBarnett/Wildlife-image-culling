@@ -98,7 +98,7 @@ def _make_preview_and_thumb(src: Path, image_id: str) -> tuple[Optional[Path], O
             w, h = im.size
             preview = im.copy()
             preview.thumbnail((PREVIEW_MAX_SIZE, PREVIEW_MAX_SIZE), Image.LANCZOS)
-            preview.convert("RGB").save(preview_path, "JPEG", quality=88)
+            preview.convert("RGB").save(preview_path, "JPEG", quality=85, optimize=True)
 
             thumb = im.copy()
             thumb.thumbnail((THUMB_MAX_SIZE, THUMB_MAX_SIZE), Image.LANCZOS)
