@@ -222,17 +222,95 @@ def _read_b64(path: Path) -> str:
     return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
+def format_feedback_block(rows: list[dict], max_examples: int = 5) -> str:
+    """Turn the user's recent corrections into a few-shot prompt prefix.
+
+    Each correction shows the AI's prior verdict and the user's override on
+    that same image, so the judge can see the pattern of where it tends to
+    be wrong from this user's perspective. We cap at max_examples to keep
+    the prompt small and prefer corrections that include a free-text note
+    (the most informative ones)."""
+    if not rows:
+        return ""
+
+    rows = sorted(rows, key=lambda r: 0 if (r.get("ai_feedback") or {}).get("note") else 1)
+    items: list[str] = []
+    for r in rows:
+        fb = r.get("ai_feedback") or {}
+        if not fb:
+            continue
+        judges = r.get("ai_judges") or {}
+        ai_bits = []
+        for name, slot in judges.items():
+            if isinstance(slot, dict) and slot.get("status") == "done" and slot.get("result"):
+                res = slot["result"]
+                ai_bits.append(
+                    f"{name}: artistic={res.get('artistic_score')}, "
+                    f"portfolio={res.get('portfolio_potential')}, "
+                    f"eye_focus={res.get('eye_focus')}, "
+                    f"composition={res.get('composition')}, "
+                    f"lighting={res.get('lighting')}, "
+                    f"issues={res.get('technical_issues')}"
+                )
+        ai_text = " | ".join(ai_bits) if ai_bits else "(no AI scores)"
+
+        user_bits = []
+        for k in ("artistic", "portfolio"):
+            if k in fb:
+                user_bits.append(f"{k}={fb[k]}")
+        for k in ("eye_focus", "motion", "composition", "lighting",
+                  "animal_type", "species", "subject"):
+            if k in fb and fb[k]:
+                user_bits.append(f"{k}={fb[k]}")
+        if "is_silhouette" in fb:
+            user_bits.append(f"is_silhouette={fb['is_silhouette']}")
+        if "technical_issues" in fb:
+            user_bits.append(f"technical_issues={fb['technical_issues']}")
+        if fb.get("marked_wrong"):
+            user_bits.append("(user flagged whole AI analysis as wrong)")
+        user_text = ", ".join(user_bits) if user_bits else "(no field changes)"
+
+        subj = r.get("ai_subject") or "(subject unknown)"
+        note = (fb.get("note") or "").strip()
+        line = (
+            f"- Subject: {subj}. AI said: {ai_text}. "
+            f"User corrected to: {user_text}."
+        )
+        if note:
+            line += f' User said: "{note}"'
+        items.append(line)
+
+        if len(items) >= max_examples:
+            break
+
+    if not items:
+        return ""
+
+    return (
+        "PHOTOGRAPHER FEEDBACK ON YOUR PAST WORK — these are corrections this user has "
+        "made to prior AI analyses. They are GROUND TRUTH. Use them as calibration anchors: "
+        "if you see a similar pattern on the new image, lean toward the user's verdict, not "
+        "the previous AI verdict. Pay attention to specific recurring complaints in the "
+        "user's notes (e.g. 'don't hallucinate out_of_focus when the eye is sharp', "
+        "'be harsher with portfolio_potential', 'don't penalize captive context for stock').\n\n"
+        + "\n".join(items)
+        + "\n\nNow evaluate the new image, applying that calibration:\n\n"
+    )
+
+
 def analyze_with_judge(
     judge: dict,
     preview_path: Path,
+    examples_block: str = "",
     idle_timeout: float = 300.0,
     total_timeout: float = 900.0,
 ) -> tuple[dict, str]:
     if not preview_path.exists():
         raise FileNotFoundError(f"Preview missing: {preview_path}")
+    full_prompt = (examples_block + judge["prompt"]) if examples_block else judge["prompt"]
     payload = {
         "model": judge["model"],
-        "prompt": judge["prompt"],
+        "prompt": full_prompt,
         "images": [_read_b64(preview_path)],
         "stream": True,
         "format": "json",

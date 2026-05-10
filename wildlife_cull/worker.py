@@ -130,8 +130,15 @@ class BackgroundWorker:
         self._ensure_warm(judge)
 
         ts = time.time()
+        with db.connect() as conn:
+            feedback_rows = db.list_feedback_examples(conn, limit=10)
+        examples_block = ai.format_feedback_block(feedback_rows, max_examples=5)
         try:
-            parsed, raw = ai.analyze_with_judge(judge, Path(row["preview_path"]))
+            parsed, raw = ai.analyze_with_judge(
+                judge,
+                Path(row["preview_path"]),
+                examples_block=examples_block,
+            )
             with db.connect() as conn:
                 db.set_judge_result(
                     conn, row["id"], judge["name"],

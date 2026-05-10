@@ -34,7 +34,10 @@ async function refreshHealth() {
     const h = await jget("/api/health");
     const el = $("#health");
     if (h.ok) {
-      el.textContent = `ready · ${h.vision_model}`;
+      const trained = h.feedback_active
+        ? ` · trained on ${h.feedback_active} of your corrections`
+        : (h.feedback_corrections === 0 ? " · no corrections yet" : "");
+      el.textContent = `ready · ${h.vision_model}${trained}`;
       el.className = "health ok";
     } else {
       el.textContent = h.ollama_issue || "issue";
