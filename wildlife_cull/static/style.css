@@ -58,6 +58,9 @@ body.select-mode .card:hover { outline: 2px solid var(--accent); }
 .budget.budget-warning { color: #f5c451; border-color: rgba(245, 196, 81, 0.5); background: rgba(245, 196, 81, 0.08); }
 .budget.budget-blocked { color: #ff8a8a; border-color: rgba(255, 100, 100, 0.6); background: rgba(255, 100, 100, 0.12); }
 .budget.budget-disabled { opacity: 0.6; }
+.bulk-divider { color: var(--border); margin: 0 4px; }
+.bulk-info.bulk-done { color: #6fdb95; }
+.bulk-info.bulk-blocked { color: #ff8a8a; }
 .judges-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
 .triage-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .keep-badge { display: inline-block; padding: 4px 10px; border-radius: 4px; font-weight: 700; font-size: 13px; letter-spacing: 0.5px; }

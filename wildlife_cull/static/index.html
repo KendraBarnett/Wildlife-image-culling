@@ -142,6 +142,10 @@
     <button id="select-clear" class="secondary hidden">Clear selection</button>
     <button id="reanalyze-selected" class="hidden">Re-analyze selected</button>
     <button id="reanalyze-errored" class="secondary">Re-analyze all errored</button>
+    <span class="bulk-divider">|</span>
+    <button id="score-keepers" title="Score every keeper not yet scored with Claude. Stops at the budget cap.">Score all keepers with Claude</button>
+    <button id="score-keepers-cancel" class="secondary hidden">Stop scoring</button>
+    <span id="score-keepers-progress" class="bulk-info hidden"></span>
   </section>
 
   <main id="grid"></main>

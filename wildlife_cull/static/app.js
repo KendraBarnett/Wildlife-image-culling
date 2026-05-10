@@ -37,6 +37,7 @@ function renderBudgetPill(c) {
     el.textContent = "Claude: API key not set";
     el.className = "budget budget-disabled";
     el.title = "Set ANTHROPIC_API_KEY in scripts/run.sh to enable Phase 2 scoring.";
+    renderBulkProgress(c.bulk);
     return;
   }
   const label = `Claude: $${c.spent_usd.toFixed(4)} of $${c.budget_usd.toFixed(2)} · ${c.images} scored · ${c.pct}%`;
@@ -47,6 +48,62 @@ function renderBudgetPill(c) {
     : c.state === "warning"
     ? "Approaching budget cap (≥80%). New scoring still allowed until 100%."
     : `Model: ${c.model}. Remaining: $${c.remaining_usd.toFixed(4)}.`;
+  renderBulkProgress(c.bulk);
+}
+
+let _bulkPollTimer = null;
+function startBulkPoll() {
+  if (_bulkPollTimer) return;
+  _bulkPollTimer = setInterval(async () => {
+    await refreshHealth();
+    const b = window._lastBulkState;
+    if (b && b.state !== "running") {
+      clearInterval(_bulkPollTimer);
+      _bulkPollTimer = null;
+      refreshGrid();
+    }
+  }, 2000);
+}
+
+function renderBulkProgress(b) {
+  window._lastBulkState = b;
+  if (b && b.state === "running" && !_bulkPollTimer) startBulkPoll();
+  const startBtn = $("#score-keepers");
+  const cancelBtn = $("#score-keepers-cancel");
+  const progress = $("#score-keepers-progress");
+  if (!startBtn || !progress) return;
+  if (!b || b.state === "idle") {
+    startBtn.classList.remove("hidden");
+    cancelBtn.classList.add("hidden");
+    progress.classList.add("hidden");
+    return;
+  }
+  if (b.state === "running") {
+    startBtn.classList.add("hidden");
+    cancelBtn.classList.remove("hidden");
+    progress.classList.remove("hidden");
+    progress.textContent = `Scoring ${b.done}/${b.total}${b.failed ? ` (${b.failed} errored)` : ""} · $${b.spent_this_run.toFixed(4)} this run · ${b.last_filename || "starting…"}`;
+    progress.className = "bulk-info";
+    return;
+  }
+  // Terminal states: done, cancelled, budget_blocked, error
+  startBtn.classList.remove("hidden");
+  cancelBtn.classList.add("hidden");
+  progress.classList.remove("hidden");
+  const summary = `${b.done}/${b.total} scored${b.failed ? `, ${b.failed} errored` : ""} · $${b.spent_this_run.toFixed(4)}`;
+  if (b.state === "done") {
+    progress.textContent = `Done: ${summary}`;
+    progress.className = "bulk-info bulk-done";
+  } else if (b.state === "cancelled") {
+    progress.textContent = `Stopped: ${summary}`;
+    progress.className = "bulk-info";
+  } else if (b.state === "budget_blocked") {
+    progress.textContent = `Budget cap hit at ${summary}. Raise CLAUDE_BUDGET_USD in run.sh to continue.`;
+    progress.className = "bulk-info bulk-blocked";
+  } else {
+    progress.textContent = `Stopped: ${summary}${b.last_error ? ` (${b.last_error.slice(0, 80)})` : ""}`;
+    progress.className = "bulk-info bulk-blocked";
+  }
 }
 
 async function refreshHealth() {
@@ -677,6 +734,26 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!confirm(`Re-analyze ${ids.length} image(s)? They will go back into the analysis queue.`)) return;
     reanalyzeIds(ids);
   };
+  $("#score-keepers").onclick = async () => {
+    if (!confirm(
+      "Send every keeper not yet scored to Claude. This costs real money "
+      + "(roughly 1¢ per image) and stops automatically at the budget cap.\n\n"
+      + "Continue?"
+    )) return;
+    try {
+      await jpost("/api/claude/score-keepers");
+    } catch (e) {
+      alert("Could not start: " + e.message);
+      return;
+    }
+    refreshHealth();
+    startBulkPoll();
+  };
+  $("#score-keepers-cancel").onclick = async () => {
+    try { await jpost("/api/claude/score-keepers/cancel"); } catch (e) {}
+    refreshHealth();
+  };
+
   $("#reanalyze-errored").onclick = () => {
     const scope = state.folder ? "in this folder" : "across all folders";
     if (!confirm(`Re-analyze every errored image ${scope}?`)) return;

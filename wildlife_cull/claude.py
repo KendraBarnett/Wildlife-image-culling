@@ -300,6 +300,115 @@ def _parse_json(text: str) -> dict:
     return {}
 
 
+class BulkScorer:
+    """Background scorer that walks all keep=yes, not-yet-scored images and
+    scores them one at a time, respecting the budget cap. Single-flight:
+    only one bulk job runs at a time. The UI polls status to render
+    progress. Stops gracefully when budget hits 100%, when cancelled, or
+    when the queue empties."""
+
+    def __init__(self) -> None:
+        import threading
+        self._thread: Optional[threading.Thread] = None
+        self._lock = threading.Lock()
+        self._cancel = threading.Event()
+        self.state = "idle"        # idle | running | done | cancelled | budget_blocked | error
+        self.total = 0
+        self.done = 0
+        self.failed = 0
+        self.spent_usd_at_start = 0.0
+        self.last_filename = ""
+        self.last_error: Optional[str] = None
+        self.started_at: Optional[float] = None
+        self.finished_at: Optional[float] = None
+
+    def status(self) -> dict:
+        return {
+            "state": self.state,
+            "total": self.total,
+            "done": self.done,
+            "failed": self.failed,
+            "last_filename": self.last_filename,
+            "last_error": self.last_error,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "spent_this_run": round(usage_summary()["spent_usd"] - self.spent_usd_at_start, 4),
+        }
+
+    def cancel(self) -> None:
+        self._cancel.set()
+
+    def start(self) -> dict:
+        import threading
+        with self._lock:
+            if self._thread and self._thread.is_alive():
+                return {"already_running": True, "status": self.status()}
+            if not ANTHROPIC_API_KEY:
+                raise NotConfigured(
+                    "ANTHROPIC_API_KEY is not set. Add it to scripts/run.sh "
+                    "(export ANTHROPIC_API_KEY=sk-ant-...) and restart."
+                )
+            self._cancel.clear()
+            self.state = "running"
+            self.done = 0
+            self.failed = 0
+            self.last_filename = ""
+            self.last_error = None
+            self.started_at = time.time()
+            self.finished_at = None
+            self.spent_usd_at_start = usage_summary()["spent_usd"]
+
+            with db.connect() as conn:
+                rows = conn.execute(
+                    "SELECT id, filename, preview_path FROM images "
+                    "WHERE ai_keep='yes' "
+                    "AND claude_scored_at IS NULL "
+                    "AND preview_path IS NOT NULL "
+                    "AND ai_status NOT IN ('cancelled') "
+                    "ORDER BY filename"
+                ).fetchall()
+            queue = [(r["id"], r["filename"], r["preview_path"]) for r in rows]
+            self.total = len(queue)
+            if not queue:
+                self.state = "done"
+                self.finished_at = time.time()
+                return {"started": False, "status": self.status()}
+
+            self._thread = threading.Thread(
+                target=self._run, args=(queue,), name="claude-bulk", daemon=True
+            )
+            self._thread.start()
+            return {"started": True, "status": self.status()}
+
+    def _run(self, queue: list) -> None:
+        for image_id, filename, preview_path in queue:
+            if self._cancel.is_set():
+                self.state = "cancelled"
+                self.finished_at = time.time()
+                return
+            self.last_filename = filename
+            try:
+                result = score_image(image_id, Path(preview_path))
+                persist_score(image_id, result)
+                self.done += 1
+                self.last_error = None
+            except BudgetExceeded as exc:
+                self.state = "budget_blocked"
+                self.last_error = str(exc)
+                self.finished_at = time.time()
+                return
+            except Exception as exc:
+                self.failed += 1
+                self.last_error = f"{filename}: {type(exc).__name__}: {exc}"
+                # keep going — one bad image shouldn't kill the whole run
+        self.state = "done"
+        self.finished_at = time.time()
+
+
+# Module-level singleton; the server reuses it across requests.
+bulk_scorer = BulkScorer()
+
+
 def persist_score(image_id: int, result: dict) -> None:
     with db.connect() as conn:
         conn.execute(

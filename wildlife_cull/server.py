@@ -54,13 +54,32 @@ def health() -> dict:
         "worker_in_flight": worker.in_flight,
         "feedback_corrections": fb_count,
         "feedback_active": min(fb_count, 5),
-        "claude": claude_mod.usage_summary(),
+        "claude": {**claude_mod.usage_summary(), "bulk": claude_mod.bulk_scorer.status()},
     }
 
 
 @app.get("/api/claude/usage")
 def api_claude_usage() -> dict:
-    return claude_mod.usage_summary()
+    return {**claude_mod.usage_summary(), "bulk": claude_mod.bulk_scorer.status()}
+
+
+@app.post("/api/claude/score-keepers")
+def api_score_keepers() -> dict:
+    try:
+        return claude_mod.bulk_scorer.start()
+    except claude_mod.NotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
+@app.post("/api/claude/score-keepers/cancel")
+def api_score_keepers_cancel() -> dict:
+    claude_mod.bulk_scorer.cancel()
+    return {"ok": True, "status": claude_mod.bulk_scorer.status()}
+
+
+@app.get("/api/claude/score-keepers/status")
+def api_score_keepers_status() -> dict:
+    return claude_mod.bulk_scorer.status()
 
 
 @app.post("/api/image/{image_id}/score-with-claude")
