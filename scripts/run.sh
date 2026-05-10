@@ -10,6 +10,19 @@ fi
 
 source .venv/bin/activate
 
+# Triage model — used for Phase 1 analysis on every image. Default is
+# llama3.2-vision:11b because the 11B model handles the long, rule-heavy
+# triage prompt more reliably than 7B alternatives. Override to qwen
+# for faster (but less careful) analysis if you're memory-constrained.
+# Memory: llama3.2-vision uses ~10 GB while loaded, qwen ~7 GB.
+# export WC_TRIAGE_MODEL="llama3.2-vision:11b"
+# export WC_TRIAGE_MODEL="qwen2.5vl:7b"
+# export WC_TRIAGE_MODEL="minicpm-v:latest"
+
+# Compare model — used by 'Compare 2 with AI'. Simpler task, so we use
+# the faster model here by default.
+# export WC_COMPARE_MODEL="qwen2.5vl:7b"
+
 # Phase 2 — on-demand scoring with Claude Sonnet 4.6.
 # Uncomment and paste your key to enable the "Score with Claude" button.
 # Without it, Phase 1 (local triage) still runs normally; only Phase 2 is gated.

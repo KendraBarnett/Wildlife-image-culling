@@ -8,7 +8,7 @@ from typing import Optional
 import httpx
 import numpy as np
 
-from .config import OLLAMA_HOST, VISION_MODEL, CLIP_MODEL
+from .config import OLLAMA_HOST, VISION_MODEL, CLIP_MODEL, TRIAGE_MODEL, COMPARE_MODEL
 
 # Bigger inputs make the vision encoder slower without meaningfully
 # improving culling judgment. On a 16 GB M-series Mac mini, sending the
@@ -194,7 +194,7 @@ JUDGES = [
     {
         "name": "triage",
         "label": "Triage",
-        "model": "qwen2.5vl:7b",
+        "model": TRIAGE_MODEL,
         "prompt": TRIAGE_PROMPT,
         "weight": 1.0,
         "primary": True,
@@ -491,14 +491,17 @@ def compare_two_images(
     if not preview2_path.exists():
         raise FileNotFoundError(f"Preview missing: {preview2_path}")
 
-    j = judge or primary_judge()
+    # The compare task is simpler than triage (pick the better of two);
+    # use the faster COMPARE_MODEL by default to keep latency low.
+    # An explicit judge arg still overrides it.
+    model_to_use = (judge["model"] if judge else COMPARE_MODEL)
     encode_start = time.time()
     img1_b64 = _read_b64(preview1_path)
     img2_b64 = _read_b64(preview2_path)
     encode_secs = time.time() - encode_start
 
     payload = {
-        "model": j["model"],
+        "model": model_to_use,
         "prompt": COMPARE_PROMPT,
         # Order matters here — the prompt refers to "first" and "second"
         # by index.
