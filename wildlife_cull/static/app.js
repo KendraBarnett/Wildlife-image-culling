@@ -821,17 +821,23 @@ document.addEventListener("DOMContentLoaded", () => {
       alert("Pick a folder first (top of the page) — burst grouping operates on one folder at a time.");
       return;
     }
-    $("#ingest-status").textContent = "Finding bursts…";
+    const gap = parseFloat($("#burst-gap").value) || 120;
+    const sim = parseFloat($("#burst-sim").value) || 0.85;
+    $("#ingest-status").textContent = `Finding bursts (gap ${gap}s, sim ${sim})…`;
     try {
-      const r = await jpost("/api/bursts/recompute", { folder: state.folder });
+      const r = await jpost("/api/bursts/recompute", {
+        folder: state.folder,
+        time_gap_sec: gap,
+        sim_threshold: sim,
+      });
       let msg = `${r.bursts} burst(s) · ${r.images_in_bursts} frames`;
       if (r.bursts === 0 && r.reason) {
         msg = `0 bursts. ${r.reason}`;
         if (r.with_capture_time === 0 && r.total_in_folder > 0) {
-          msg += " Try the 'Backfill capture times' button below.";
+          msg += " Or run 'Backfill capture times'.";
         }
       } else {
-        msg += ` · ${r.with_embedding}/${r.total_in_folder} embedded · ${r.with_capture_time} have EXIF time (${r.elapsed_sec}s)`;
+        msg += ` (gap ${r.time_gap_sec}s, sim ${r.sim_threshold}, ${r.with_embedding}/${r.total_in_folder} embedded, ${r.elapsed_sec}s)`;
       }
       $("#ingest-status").textContent = msg;
       refreshGrid();

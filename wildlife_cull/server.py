@@ -290,11 +290,17 @@ def api_ai_vocab() -> dict:
 
 class BurstReq(BaseModel):
     folder: str
+    time_gap_sec: Optional[float] = None
+    sim_threshold: Optional[float] = None
 
 
 @app.post("/api/bursts/recompute")
 def api_bursts_recompute(req: BurstReq) -> dict:
-    return bursts.recompute_bursts_for_folder(req.folder)
+    return bursts.recompute_bursts_for_folder(
+        req.folder,
+        time_gap_sec=req.time_gap_sec,
+        sim_threshold=req.sim_threshold,
+    )
 
 
 @app.post("/api/admin/backfill-capture-times")

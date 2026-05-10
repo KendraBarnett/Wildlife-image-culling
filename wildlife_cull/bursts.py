@@ -28,27 +28,39 @@ the user is still ingesting more frames into the same shoot.
 from __future__ import annotations
 
 import time
-from typing import Iterable
+from typing import Iterable, Optional
 
 import numpy as np
 
 from . import db
 
 
-BURST_TIME_GAP_SEC = 15.0   # was 8 — too tight for typical wildlife bursts
-BURST_SIM_THRESHOLD = 0.90  # was 0.92 — slightly more permissive
+# Defaults: 'same scene, same subject' thresholds, not 'rapid shutter
+# burst'. A frame joins a group when it's still visually similar to the
+# group's ANCHOR (first frame), not just the previous one — this keeps
+# the burst together when the subject turns its head or you swap a lens
+# mid-shoot. Time gap is to the anchor too, generous (2 minutes) so a
+# brief pause doesn't split the same scene.
+BURST_TIME_GAP_SEC = 120.0
+BURST_SIM_THRESHOLD = 0.85
 
 
 def _vec_from_bytes(buf: bytes) -> np.ndarray:
     return np.frombuffer(buf, dtype=np.float32)
 
 
-def recompute_bursts_for_folder(folder: str) -> dict:
+def recompute_bursts_for_folder(
+    folder: str,
+    time_gap_sec: Optional[float] = None,
+    sim_threshold: Optional[float] = None,
+) -> dict:
     """Group adjacent same-scene frames into bursts. Returns rich
     diagnostics so the UI can explain a zero-burst result honestly:
     no embeddings yet? no capture times? scattered timestamps? The
     user shouldn't have to guess."""
     started = time.time()
+    time_gap = float(time_gap_sec if time_gap_sec is not None else BURST_TIME_GAP_SEC)
+    sim_min = float(sim_threshold if sim_threshold is not None else BURST_SIM_THRESHOLD)
     with db.connect() as conn:
         total_in_folder = conn.execute(
             "SELECT COUNT(*) AS n FROM images WHERE folder=?", (folder,)
@@ -95,9 +107,9 @@ def recompute_bursts_for_folder(folder: str) -> dict:
 
         groups: list[list[dict]] = []
         current: list[dict] = []
-        prev_vec: np.ndarray | None = None
-        prev_t: float | None = None
-        # Diagnostic counts — why an adjacent pair did NOT join.
+        anchor_vec: np.ndarray | None = None
+        anchor_t: float | None = None
+        # Diagnostic counts — why an image didn't join the current group.
         rejected_time = 0
         rejected_sim = 0
 
@@ -116,24 +128,27 @@ def recompute_bursts_for_folder(folder: str) -> dict:
             }
             if not current:
                 current = [entry]
-                prev_vec = vec
-                prev_t = t
+                anchor_vec = vec
+                anchor_t = t
                 continue
 
-            time_gap = abs(t - (prev_t or t))
-            sim = float(np.dot(vec, prev_vec)) if prev_vec is not None else 0.0
-            if time_gap <= BURST_TIME_GAP_SEC and sim >= BURST_SIM_THRESHOLD:
+            # Anchor-based comparison: same SUBJECT (similar to first
+            # frame) within a generous time window. Survives the bird
+            # turning its head, a brief lens swap, etc.
+            dt = abs(t - (anchor_t or t))
+            sim = float(np.dot(vec, anchor_vec)) if anchor_vec is not None else 0.0
+            if dt <= time_gap and sim >= sim_min:
                 current.append(entry)
             else:
-                if time_gap > BURST_TIME_GAP_SEC:
+                if dt > time_gap:
                     rejected_time += 1
-                elif sim < BURST_SIM_THRESHOLD:
+                elif sim < sim_min:
                     rejected_sim += 1
                 if len(current) > 1:
                     groups.append(current)
                 current = [entry]
-            prev_vec = vec
-            prev_t = t
+                anchor_vec = vec
+                anchor_t = t
 
         if len(current) > 1:
             groups.append(current)
@@ -153,21 +168,22 @@ def recompute_bursts_for_folder(folder: str) -> dict:
     if not groups:
         if with_capture_time == 0 and rejected_time > rejected_sim:
             reason = (
-                "No EXIF capture times on these images and file mtimes are "
-                "scattered across more than 15s — no two adjacent frames "
-                "qualify as a burst. Run 'Backfill capture times' if EXIF "
-                "data exists in the originals."
+                f"No EXIF capture times on these images and file mtimes "
+                f"span more than {int(time_gap)}s. Run 'Backfill capture "
+                f"times' if EXIF data exists in the originals — or widen "
+                f"the time-gap slider."
             )
         elif rejected_sim > 0 and rejected_time == 0:
             reason = (
-                "Frames are close in time but visually too different to "
-                "group as bursts (CLIP similarity < 0.90)."
+                f"Frames are close in time but visually too different "
+                f"(CLIP similarity to first-of-group < {sim_min:.2f}). "
+                f"Try lowering the similarity slider."
             )
         else:
             reason = (
-                f"Walked {len(rows)} embedded images; no contiguous run "
-                f"qualified as a burst (rejected on time: {rejected_time}, "
-                f"on similarity: {rejected_sim})."
+                f"Walked {len(rows)} embedded images; no run of 2+ "
+                f"qualified (rejected on time: {rejected_time}, on "
+                f"similarity: {rejected_sim})."
             )
 
     return {
@@ -179,6 +195,8 @@ def recompute_bursts_for_folder(folder: str) -> dict:
         "with_capture_time": with_capture_time,
         "rejected_time": rejected_time,
         "rejected_sim": rejected_sim,
+        "time_gap_sec": time_gap,
+        "sim_threshold": sim_min,
         "elapsed_sec": round(time.time() - started, 2),
         "reason": reason,
     }

@@ -126,6 +126,12 @@
       <option value="singletons">Singletons</option>
     </select>
     <button id="recompute-bursts" class="secondary" title="Group similar consecutive frames into bursts and pick the sharpest of each">Find bursts</button>
+    <label class="burst-knob" title="How close in time (in seconds) two frames must be — measured from the first frame of the group. Higher = more permissive grouping across pauses.">
+      gap: <input id="burst-gap" type="number" min="5" max="600" step="5" value="120" />s
+    </label>
+    <label class="burst-knob" title="How visually similar a frame must be to the first frame of the group (CLIP cosine, 0–1). Lower = looser grouping. 0.85 is 'same subject, different pose'.">
+      sim: <input id="burst-sim" type="number" min="0.6" max="0.99" step="0.01" value="0.85" />
+    </label>
     <label>Subject contains:</label>
     <input id="filter-subject" type="text" placeholder="owl, gorilla…" />
     <label>Technical ≥</label>
