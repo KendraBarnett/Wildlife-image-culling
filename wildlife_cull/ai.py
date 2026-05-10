@@ -181,7 +181,7 @@ JUDGES = [
     {
         "name": "natgeo",
         "label": "NatGeo",
-        "model": "llama3.2-vision:11b",
+        "model": "qwen2.5vl:7b",
         "prompt": NATGEO_PROMPT,
         "weight": 1.0,
         "primary": True,  # this judge's structured fields populate the searchable columns
@@ -189,7 +189,7 @@ JUDGES = [
     {
         "name": "stock",
         "label": "Stock",
-        "model": "minicpm-v:8b",
+        "model": "qwen2.5vl:7b",
         "prompt": STOCK_PROMPT,
         "weight": 1.0,
         "primary": False,
