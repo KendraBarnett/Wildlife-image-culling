@@ -61,6 +61,14 @@ body.select-mode .card:hover { outline: 2px solid var(--accent); }
 .bulk-divider { color: var(--border); margin: 0 4px; }
 .bulk-info.bulk-done { color: #6fdb95; }
 .bulk-info.bulk-blocked { color: #ff8a8a; }
+.modal-small .modal-content, .modal-content.modal-small { max-width: 520px; padding: 24px; }
+.modal-small h2 { margin-top: 0; }
+.bulk-tag-custom { display: flex; flex-direction: column; gap: 4px; margin: 12px 0; }
+.bulk-tag-custom input { padding: 6px 8px; }
+.bulk-tag-mode { display: flex; gap: 16px; border: 1px solid var(--border); border-radius: 4px; padding: 8px 12px; margin-bottom: 12px; }
+.bulk-tag-mode label { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.bulk-tag-actions { display: flex; align-items: center; gap: 12px; }
+#bulk-tag-modal #bulk-tag-chips { margin-top: 8px; }
 .judges-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
 .triage-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .keep-badge { display: inline-block; padding: 4px 10px; border-radius: 4px; font-weight: 700; font-size: 13px; letter-spacing: 0.5px; }

@@ -63,6 +63,53 @@ def api_claude_usage() -> dict:
     return {**claude_mod.usage_summary(), "bulk": claude_mod.bulk_scorer.status()}
 
 
+@app.get("/api/admin/preview-stats")
+def api_preview_stats() -> dict:
+    """How much disk the preview cache is using right now."""
+    from .config import PREVIEW_DIR
+    total_bytes = 0
+    count = 0
+    for p in Path(PREVIEW_DIR).glob("*"):
+        if p.is_file():
+            try:
+                total_bytes += p.stat().st_size
+                count += 1
+            except OSError:
+                pass
+    return {
+        "file_count": count,
+        "bytes": total_bytes,
+        "mb": round(total_bytes / (1024 * 1024), 1),
+        "gb": round(total_bytes / (1024 * 1024 * 1024), 2),
+    }
+
+
+@app.post("/api/admin/clear-previews")
+def api_clear_previews() -> dict:
+    """Delete every cached preview/thumb file and null out preview_path in
+    the DB. The next time you open the app, previews will be re-extracted
+    from the original RAW/JPEG on demand (slow for RAW — minutes for a
+    folder of hundreds — but reclaims gigs of disk)."""
+    from .config import PREVIEW_DIR
+    removed = 0
+    bytes_freed = 0
+    for p in Path(PREVIEW_DIR).glob("*"):
+        if p.is_file():
+            try:
+                bytes_freed += p.stat().st_size
+                p.unlink()
+                removed += 1
+            except OSError:
+                pass
+    with db.connect() as conn:
+        conn.execute("UPDATE images SET preview_path=NULL, thumb_path=NULL")
+    return {
+        "ok": True,
+        "files_removed": removed,
+        "mb_freed": round(bytes_freed / (1024 * 1024), 1),
+    }
+
+
 @app.post("/api/claude/score-keepers")
 def api_score_keepers() -> dict:
     try:
@@ -496,8 +543,67 @@ class RateReq(BaseModel):
     notes: Optional[str] = None
 
 
+class BulkTagsReq(BaseModel):
+    image_ids: list[int]
+    tags: list[str]
+    mode: str = "add"   # "add" merges into existing tags; "replace" overwrites
+
+
+@app.post("/api/bulk/tags")
+def api_bulk_tags(req: BulkTagsReq) -> dict:
+    """Apply tags to many images at once. Writes to SQLite and to each
+    image's XMP sidecar so Lightroom picks them up."""
+    if not req.image_ids:
+        raise HTTPException(status_code=400, detail="no images given")
+    if req.mode not in ("add", "replace"):
+        raise HTTPException(status_code=400, detail=f"unknown mode: {req.mode}")
+    new_tags = [t.strip() for t in req.tags if t and t.strip()]
+    if not new_tags and req.mode == "add":
+        raise HTTPException(status_code=400, detail="no tags to add")
+
+    updated = 0
+    sidecar_errors: list[str] = []
+    ts = time.time()
+    with db.connect() as conn:
+        placeholders = ",".join("?" for _ in req.image_ids)
+        rows = conn.execute(
+            f"SELECT id, path, user_rating, user_tags, user_notes "
+            f"FROM images WHERE id IN ({placeholders})",
+            req.image_ids,
+        ).fetchall()
+        for row in rows:
+            try:
+                existing = json.loads(row["user_tags"]) if row["user_tags"] else []
+            except Exception:
+                existing = []
+            if req.mode == "add":
+                seen = set(existing)
+                merged = list(existing) + [t for t in new_tags if t not in seen]
+            else:
+                merged = list(new_tags)
+            db.set_user_rating(
+                conn, row["id"], row["user_rating"], merged, row["user_notes"], ts,
+            )
+            try:
+                xmp.write_sidecar(row["path"], row["user_rating"], merged, row["user_notes"])
+            except Exception as exc:
+                sidecar_errors.append(f"{row['path']}: {exc}")
+            updated += 1
+    return {
+        "ok": True,
+        "updated": updated,
+        "sidecar_errors": sidecar_errors[:10],
+    }
+
+
 @app.post("/api/image/{image_id}/rate")
 def api_rate(image_id: int, req: RateReq) -> dict:
+    """Trust the request shape. The UI always sends all three fields on
+    every save (see app.js doSave), so `rating=None` means 'clear', not
+    'no change'. The earlier 'fall back to existing if None' logic broke
+    the clear-rating button — null came in, we treated it as 'unchanged',
+    and the existing rating stuck."""
+    sent = req.model_fields_set
     with db.connect() as conn:
         row = conn.execute(
             "SELECT path, user_rating, user_tags, user_notes FROM images WHERE id=?",
@@ -506,15 +612,15 @@ def api_rate(image_id: int, req: RateReq) -> dict:
         if not row:
             raise HTTPException(status_code=404, detail="not found")
 
-        rating = req.rating if req.rating is not None else row["user_rating"]
-        if req.tags is not None:
-            tags = req.tags
+        rating = req.rating if "rating" in sent else row["user_rating"]
+        if "tags" in sent:
+            tags = req.tags or []
         else:
             try:
                 tags = json.loads(row["user_tags"]) if row["user_tags"] else []
             except Exception:
                 tags = []
-        notes = req.notes if req.notes is not None else row["user_notes"]
+        notes = req.notes if "notes" in sent else row["user_notes"]
 
         ts = time.time()
         db.set_user_rating(conn, image_id, rating, tags, notes, ts)

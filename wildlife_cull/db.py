@@ -288,7 +288,7 @@ def list_pending_for_judge(
     Skips images that aren't in a fresh 'pending' or 'done'-but-incomplete
     state and skips cancelled images."""
     rows = conn.execute(
-        "SELECT * FROM images WHERE ai_status NOT IN ('cancelled') ORDER BY id"
+        "SELECT * FROM images WHERE ai_status NOT IN ('cancelled') ORDER BY filename, id"
     ).fetchall()
     out = []
     for r in rows:
@@ -310,12 +310,13 @@ def next_pending_image_and_judge(
     conn: sqlite3.Connection,
     judge_names: list[str],
 ) -> Optional[tuple[str, sqlite3.Row]]:
-    """Per-image mode: walk images in id order and return the first
-    (judge_name, image) pair where that judge has not yet reached a
-    terminal status (done/error) on that image. This finishes one image
-    fully (every judge in turn) before moving to the next."""
+    """Per-image mode: walk images in filename order (matches the UI's
+    default grid sort, so analysis fills in left-to-right, top-to-bottom)
+    and return the first (judge_name, image) pair where that judge has not
+    yet reached a terminal status (done/error)."""
     rows = conn.execute(
-        "SELECT * FROM images WHERE ai_status NOT IN ('cancelled') ORDER BY id"
+        "SELECT * FROM images WHERE ai_status NOT IN ('cancelled') "
+        "ORDER BY filename, id"
     ).fetchall()
     for r in rows:
         data = {}
@@ -491,7 +492,7 @@ def list_pending_for_ai(conn: sqlite3.Connection, limit: int = 1) -> list[sqlite
 
 def list_pending_for_embedding(conn: sqlite3.Connection, limit: int = 8) -> list[sqlite3.Row]:
     return conn.execute(
-        "SELECT * FROM images WHERE embedding IS NULL ORDER BY id LIMIT ?",
+        "SELECT * FROM images WHERE embedding IS NULL ORDER BY filename, id LIMIT ?",
         (limit,),
     ).fetchall()
 

@@ -352,8 +352,71 @@ async function openModal(id) {
   $("#save-status").textContent = "";
 }
 
+async function refreshPreviewStats() {
+  const el = $("#preview-stats");
+  if (!el) return;
+  try {
+    const s = await jget("/api/admin/preview-stats");
+    el.textContent = s.file_count > 0 ? `${s.gb} GB · ${s.file_count} files` : "";
+  } catch (e) { /* ignore */ }
+}
+
+function openBulkTagModal() {
+  const ids = [...state.selected];
+  if (!ids.length) return;
+  $("#bulk-tag-summary").textContent = `Applying tags to ${ids.length} selected image(s).`;
+  $("#bulk-tag-status").textContent = "";
+  $("#bulk-tag-status").className = "fb-status";
+  $("#bulk-tag-custom").value = "";
+  document.querySelectorAll("#bulk-tag-chips button.active").forEach((b) => b.classList.remove("active"));
+  document.querySelectorAll('input[name="bulk-tag-mode"]').forEach((r) => { r.checked = r.value === "add"; });
+  $("#bulk-tag-modal").classList.remove("hidden");
+}
+
+async function applyBulkTags() {
+  const ids = [...state.selected];
+  if (!ids.length) return;
+  const chipTags = [...document.querySelectorAll("#bulk-tag-chips button.active")].map((b) => b.dataset.tag);
+  const customRaw = $("#bulk-tag-custom").value.trim();
+  const customTags = customRaw ? customRaw.split(",").map((t) => t.trim()).filter(Boolean) : [];
+  const tags = [...new Set([...chipTags, ...customTags])];
+  const mode = document.querySelector('input[name="bulk-tag-mode"]:checked').value;
+  if (!tags.length && mode === "add") {
+    $("#bulk-tag-status").textContent = "Pick at least one tag or type a custom one.";
+    $("#bulk-tag-status").className = "fb-status bad";
+    return;
+  }
+  const status = $("#bulk-tag-status");
+  status.textContent = `Applying to ${ids.length}…`;
+  status.className = "fb-status";
+  try {
+    const r = await jpost("/api/bulk/tags", { image_ids: ids, tags, mode });
+    status.textContent = `Tagged ${r.updated} image(s).${r.sidecar_errors && r.sidecar_errors.length ? ` ${r.sidecar_errors.length} XMP write error(s).` : ""}`;
+    status.className = "fb-status ok";
+    setTimeout(() => $("#bulk-tag-modal").classList.add("hidden"), 800);
+    refreshGrid();
+  } catch (e) {
+    status.textContent = "Failed: " + e.message;
+    status.className = "fb-status bad";
+  }
+}
+
+function getPrimaryAi(img) {
+  // Returns the structured AI result for this image — Phase 1 triage's
+  // primary judge result, or the legacy ai_json fallback. This is the
+  // baseline we prefill the correction form with.
+  const judges = (state.judges || []);
+  const judgeData = img.ai_judges || {};
+  const primary = judges.find((j) => j.primary) || judges[0];
+  if (primary && judgeData[primary.name] && judgeData[primary.name].result) {
+    return judgeData[primary.name].result;
+  }
+  return img.ai || {};
+}
+
 function renderFeedback(img) {
   const fb = img.ai_feedback || null;
+  const ai = getPrimaryAi(img);
   const summary = $("#modal-feedback-summary");
   if (fb) {
     const bits = [];
@@ -376,30 +439,41 @@ function renderFeedback(img) {
     summary.innerHTML = "";
   }
 
+  // Prefill: user correction wins if present, otherwise show the AI's
+  // value. This way the user can see at a glance what the AI said and
+  // simply change any field that's wrong.
   const setVal = (id, v) => { const el = $(id); if (el) el.value = (v === undefined || v === null) ? "" : v; };
   const setCheck = (id, v) => { const el = $(id); if (el) el.checked = !!v; };
+  const pick = (fbVal, aiVal) => (fbVal !== undefined && fbVal !== null && fbVal !== "") ? fbVal : aiVal;
+
   setCheck("#fb-marked-wrong", fb && fb.marked_wrong);
-  setVal("#fb-keep", fb && fb.keep);
-  setVal("#fb-animal-type", fb && fb.animal_type);
-  setVal("#fb-species", fb && fb.species);
-  setVal("#fb-subject", fb && fb.subject);
-  setVal("#fb-in-focus", fb && fb.in_focus);
-  setVal("#fb-eye-focus", fb && fb.eye_focus);
-  setVal("#fb-motion", fb && fb.motion);
-  setVal("#fb-composition", fb && fb.composition);
-  setVal("#fb-lighting", fb && fb.lighting);
-  setVal("#fb-silhouette", fb && (fb.is_silhouette === true ? "yes" : fb.is_silhouette === false ? "no" : ""));
-  setVal("#fb-note", fb && fb.note);
-  populateIssueChips(fb);
+  setVal("#fb-keep",         pick(fb && fb.keep,         ai.keep));
+  setVal("#fb-animal-type",  pick(fb && fb.animal_type,  ai.animal_type));
+  setVal("#fb-species",      pick(fb && fb.species,      ai.species));
+  setVal("#fb-subject",      pick(fb && fb.subject,      ai.subject));
+  setVal("#fb-in-focus",     pick(fb && fb.in_focus,     ai.in_focus));
+  setVal("#fb-eye-focus",    pick(fb && fb.eye_focus,    ai.eye_focus));
+  setVal("#fb-motion",       pick(fb && fb.motion,       ai.motion));
+  setVal("#fb-composition",  pick(fb && fb.composition,  ai.composition));
+  setVal("#fb-lighting",     pick(fb && fb.lighting,     ai.lighting));
+  const silFb = (fb && fb.is_silhouette === true) ? "yes" : (fb && fb.is_silhouette === false) ? "no" : null;
+  const silAi = ai.is_silhouette ? "yes" : "no";
+  setVal("#fb-silhouette",   silFb || silAi);
+  setVal("#fb-note",         fb && fb.note);
+  populateIssueChips(fb, ai);
   $("#fb-status").textContent = "";
 }
 
-function populateIssueChips(fb) {
+function populateIssueChips(fb, ai) {
   const wrap = $("#fb-issue-chips");
   if (!wrap) return;
   wrap.innerHTML = "";
   const vocab = (state.aiVocab && state.aiVocab.technical_issues) || [];
-  const selected = new Set((fb && fb.technical_issues) || []);
+  // Prefill: user correction's issue list if present, otherwise the AI's.
+  const baseline = (fb && Array.isArray(fb.technical_issues))
+    ? fb.technical_issues
+    : ((ai && Array.isArray(ai.technical_issues)) ? ai.technical_issues : []);
+  const selected = new Set(baseline);
   for (const v of vocab) {
     const b = document.createElement("button");
     b.type = "button";
@@ -611,8 +685,9 @@ function setSelectMode(on) {
   $("#select-toggle").textContent = on ? "Exit select mode" : "Select…";
   $("#select-toggle").classList.toggle("danger", on);
   document.body.classList.toggle("select-mode", on);
-  for (const cls of ["select-info", "select-all-visible", "select-clear", "reanalyze-selected"]) {
-    $("#" + cls).classList.toggle("hidden", !on);
+  for (const cls of ["select-info", "select-all-visible", "select-clear", "reanalyze-selected", "bulk-tag-selected"]) {
+    const el = $("#" + cls);
+    if (el) el.classList.toggle("hidden", !on);
   }
   renderGrid();
   updateSelectInfo();
@@ -622,6 +697,8 @@ function updateSelectInfo() {
   const n = state.selected.size;
   $("#select-info").textContent = `${n} selected`;
   $("#reanalyze-selected").disabled = n === 0;
+  const bt = $("#bulk-tag-selected");
+  if (bt) bt.disabled = n === 0;
 }
 
 async function reanalyzeIds(ids) {
@@ -734,6 +811,29 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!confirm(`Re-analyze ${ids.length} image(s)? They will go back into the analysis queue.`)) return;
     reanalyzeIds(ids);
   };
+  $("#bulk-tag-selected").onclick = () => openBulkTagModal();
+  $("#bulk-tag-close").onclick = () => $("#bulk-tag-modal").classList.add("hidden");
+  $("#bulk-tag-chips").onclick = (e) => {
+    if (e.target.tagName !== "BUTTON") return;
+    e.target.classList.toggle("active");
+  };
+  $("#bulk-tag-apply").onclick = applyBulkTags;
+  $("#clear-previews").onclick = async () => {
+    const stats = await jget("/api/admin/preview-stats").catch(() => null);
+    const sizeNote = stats ? ` (${stats.file_count} files, ${stats.gb} GB)` : "";
+    if (!confirm(
+      `Delete all cached preview JPEGs${sizeNote}?\n\n`
+      + "Previews will re-extract on demand the next time you reopen "
+      + "a folder. RAW re-extraction is slow (minutes per hundred images)."
+    )) return;
+    try {
+      const r = await jpost("/api/admin/clear-previews");
+      alert(`Cleared ${r.files_removed} files, freed ${r.mb_freed} MB.`);
+      refreshPreviewStats();
+    } catch (e) {
+      alert("Clear failed: " + e.message);
+    }
+  };
   $("#score-keepers").onclick = async () => {
     if (!confirm(
       "Send every keeper not yet scored to Claude. This costs real money "
@@ -763,32 +863,44 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#fb-save").onclick = async () => {
     if (!state.current) return;
     const id = state.current.id;
+    const ai = getPrimaryAi(state.current);
     const issues = [...document.querySelectorAll("#fb-issue-chips button.active")].map((b) => b.dataset.value);
-    const numOrNull = (sel) => {
-      const v = $(sel).value;
-      return v === "" ? null : Number(v);
-    };
     const strOrNull = (sel) => {
       const v = $(sel).value.trim();
       return v === "" ? null : v;
     };
     const silVal = $("#fb-silhouette").value;
-    const body = {
-      marked_wrong: $("#fb-marked-wrong").checked,
-      keep: strOrNull("#fb-keep"),
-      animal_type: strOrNull("#fb-animal-type"),
-      species: strOrNull("#fb-species"),
-      subject: strOrNull("#fb-subject"),
-      in_focus: strOrNull("#fb-in-focus"),
-      eye_focus: strOrNull("#fb-eye-focus"),
-      motion: strOrNull("#fb-motion"),
-      composition: strOrNull("#fb-composition"),
-      lighting: strOrNull("#fb-lighting"),
-      is_silhouette: silVal === "yes" ? true : silVal === "no" ? false : null,
-      technical_issues: issues.length ? issues : null,
-      note: strOrNull("#fb-note"),
+    const silAiAsString = ai.is_silhouette ? "yes" : "no";
+    const aiIssues = Array.isArray(ai.technical_issues) ? [...ai.technical_issues].sort() : [];
+    const userIssues = [...issues].sort();
+    const issuesChanged = JSON.stringify(aiIssues) !== JSON.stringify(userIssues);
+    const note = strOrNull("#fb-note");
+
+    // Form value vs AI value — only persist what the user actually changed.
+    // The user's correction list becomes the training signal; same value
+    // as the AI doesn't carry signal so we don't store it.
+    const formVals = {
+      keep:         strOrNull("#fb-keep"),
+      animal_type:  strOrNull("#fb-animal-type"),
+      species:      strOrNull("#fb-species"),
+      subject:      strOrNull("#fb-subject"),
+      in_focus:     strOrNull("#fb-in-focus"),
+      eye_focus:    strOrNull("#fb-eye-focus"),
+      motion:       strOrNull("#fb-motion"),
+      composition:  strOrNull("#fb-composition"),
+      lighting:     strOrNull("#fb-lighting"),
     };
-    Object.keys(body).forEach((k) => { if (body[k] === null) delete body[k]; });
+    const body = { marked_wrong: $("#fb-marked-wrong").checked };
+    for (const [k, v] of Object.entries(formVals)) {
+      const aiVal = ai[k] === undefined || ai[k] === null ? null : String(ai[k]);
+      const formVal = v === null ? null : String(v);
+      if (formVal !== null && formVal !== aiVal) body[k] = v;
+    }
+    if (silVal && silVal !== silAiAsString) {
+      body.is_silhouette = silVal === "yes";
+    }
+    if (issuesChanged) body.technical_issues = issues;
+    if (note) body.note = note;
     try {
       const r = await jpost(`/api/image/${id}/feedback`, body);
       $("#fb-status").textContent = "Saved.";
@@ -939,6 +1051,8 @@ document.addEventListener("DOMContentLoaded", () => {
   refreshHealth();
   refreshFolders();
   refreshStats();
+  refreshPreviewStats();
   setInterval(() => { refreshStats(); refreshHealth(); }, 5000);
   setInterval(() => { if (state.folder) refreshGrid(); }, 8000);
+  setInterval(refreshPreviewStats, 30000);
 });
