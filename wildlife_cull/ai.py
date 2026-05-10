@@ -48,11 +48,21 @@ DO NOT INVENT FLAWS. The single biggest failure mode is hallucinating problems t
 
 INTERNAL CONSISTENCY — these must agree. CHECK ALL OF THESE BEFORE RETURNING:
 - `in_focus` is the simple yes/no overall question: is the SUBJECT sharp enough to use? If `in_focus` is "no", `technical_issues` MUST include "out_of_focus", and `eye_focus` MUST be "soft" or "not_visible".
-- If `in_focus` is "yes" AND the eye is clearly visible in the frame, `eye_focus` MUST be "sharp" and "out_of_focus" MUST NOT appear in technical_issues.
-- **SILHOUETTE / DEEP SHADOW RULE: If `is_silhouette` is true, OR if the subject's face is in deep shadow with no visible eye / facial detail, `eye_focus` MUST be "not_visible". Never "sharp". You cannot see an eye that isn't lit. Saying "the bird is in focus, with sharp details" while the face is a black silhouette is a forbidden contradiction.**
+
+**THE EYE_FOCUS RULE — STRICT. THIS IS THE #1 HALLUCINATION FAILURE MODE.**
+`eye_focus = "sharp"` REQUIRES POSITIVE VISUAL EVIDENCE OF SHARPNESS in the actual eye area:
+- A visible catchlight (highlight reflection in the iris/pupil) showing crisp edges, OR
+- Clear visible iris/pupil structure that's in focus.
+If you can only see WHERE the eye is (a dark shape, an outline, a guess based on the bird's face) but cannot see actual sharpness DETAIL in the eye itself, the answer is "soft" or "not_visible" — never "sharp". Sharp on adjacent features (beak, fur) does NOT transfer to the eye. Each is graded independently on what is actually visible at THIS resolution.
+- **eye_focus = "sharp" is forbidden when the eye is in shadow, backlit-into-darkness, or shows no catchlight/iris detail.** Even if the face is technically visible. "I can see where the eye is" ≠ "the eye is sharp".
+
+- **SILHOUETTE / DEEP SHADOW RULE: If `is_silhouette` is true, OR if the subject's face is in deep shadow with no visible eye / facial detail, `eye_focus` MUST be "not_visible". Never "sharp".**
+
+- **HEAVY-SHADOW SUBJECT RULE (the silhouette-adjacent case): Even when `is_silhouette` is false, if the subject's body is mostly crushed-shadow with little visible feather/fur detail, treat it the same way for `keep`. A backlit bird where the only well-lit area is the beak — body in shadow, eye barely visible, edges defined but interior dark — is NOT a keeper just because the composition is strong. See the heavy-backlight example in CALIBRATION below.**
+
 - If `technical_issues` contains "out_of_focus", then `eye_focus` MUST be "soft" or "not_visible" AND `in_focus` MUST be "no".
 - If `motion` is "blurred" because of camera shake, `technical_issues` MUST include "camera_shake".
-- Notes must never contradict the structured fields. If you write "tack sharp eye" in notes, the eye must actually be visible AND sharp in the image. If you write "silhouette" the eye is by definition not_visible.
+- Notes must never contradict the structured fields. Writing "the bird is in focus with sharp details" while the eye is in shadow is a forbidden hallucination. Be specific about WHAT is sharp — if it's the beak but not the eye, say so.
 
 KEEP DECISION — this is the cull decision. **The default is "no". You must EARN a yes.** Most images on a wildlife shoot are not keepers — that's normal, and the photographer wants the cull to reflect that. Better to send a maybe to cull than to flood the keeper pile with mediocre frames.
 
@@ -66,6 +76,8 @@ Default to "no" when:
 - composition="weak" AND nothing else carrying it → no
 - Subject unidentifiable / face hidden / heavily obstructed → no
 - **eye_focus="not_visible" on a still wildlife subject** → no, unless the moment is genuinely exceptional (dramatic action, predation, courtship). A bird with its head turned away or backlit-into-silhouette with no behavior happening is NOT a keeper.
+- **eye_focus="soft" with no exceptional moment** → no. A soft eye on a static wildlife portrait is a fail; the keeper would have a sharper neighbor in the same burst.
+- **Heavy-backlight / crushed-shadow subject** → no. If the subject's body is mostly in shadow (you cannot read feather or fur texture on most of the body), this is the silhouette-adjacent case. The image only works AS a silhouette — but the AI flagged is_silhouette=false because some rim or edge is visible, which is exactly the case where "strong composition + sharp beak" tricks the model into keeping a marginal frame. Default to no. The photographer marks it keep themselves if they specifically wanted that moody-backlight look.
 
 **SILHOUETTES (`is_silhouette`=true) DEFAULT TO `keep`="no".** Silhouettes are an artistic choice the photographer makes deliberately for specific images — the cull AI should NOT pre-select them as keepers. A silhouette earns "yes" only if:
 - The subject's shape is clearly readable as the species (not just a generic blob), AND
@@ -74,12 +86,14 @@ Default to "no" when:
 A backlit silhouette of a perched bird with no behavior is "no". The photographer will mark it "keep" themselves if they specifically wanted that silhouette.
 
 CALIBRATION EXAMPLES:
-- Backlit silhouette of a perched tern, even with prey in beak → keep="no". The eye isn't visible, the bird's body has no detail, the light isn't doing anything dramatic.
-- Clean portrait of a common cardinal in soft light, eye sharp → keep="yes". Usable stock-grade image.
+- **Side profile of an Inca tern with a fish in beak, photographed against soft blue background. The bird's body is mostly in deep shadow — the eye is technically there but in shadow with no visible catchlight, only the beak and the fish are well-lit. is_silhouette is debatable — some rim light defines the white throat line, but the body interior has no readable feather detail.** → `eye_focus="not_visible"` (no catchlight, no iris structure visible), `is_silhouette` can be true OR false but it doesn't change the verdict, **`keep="no"`**. The composition is fine and the moment (prey transfer) is fine, but the image only works as a silhouette. The photographer will mark it keep if they specifically wanted that moody-backlight look — the cull AI should NOT pre-select it.
+- Backlit silhouette of a perched tern, even with prey in beak → keep="no". Same reasoning as above.
+- Clean portrait of a common cardinal in soft front-light, eye sharp with visible catchlight → keep="yes". Usable stock-grade image.
 - Soft-focus shot of a rare species doing something exceptional (mating display) → keep="yes". The moment matters more than technical perfection.
 - A bird with its back turned, eye not visible, no behavior → keep="no".
 - A frame from a burst where the eye is closed → keep="no" (better frames almost always exist).
 - Overexposed sky with clipped highlights on the subject → keep="no".
+- A genuinely strong silhouette: bird in flight pose against a dramatic sunset, shape clearly readable, the sky IS the photograph → keep="yes". Note the difference: the LIGHT is doing something here, vs the heavy-backlight case where the light is just losing detail.
 
 You are NOT scoring artistic merit — a separate scorer (Claude) handles ranking among keepers. Your job is the filter. Be strict at the filter."""
 
