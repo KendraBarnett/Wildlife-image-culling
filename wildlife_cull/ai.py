@@ -46,17 +46,42 @@ DO NOT INVENT FLAWS. The single biggest failure mode is hallucinating problems t
 - Do not flag "out_of_focus" because the background is blurred — background blur is normal bokeh, not a flaw. Out-of-focus is only a flaw if it affects the SUBJECT.
 - Do not flag "blown_highlights" unless you can actually see white pixels with no detail in the subject area.
 
-INTERNAL CONSISTENCY — these must agree:
-- `in_focus` is the simple yes/no overall question: is the SUBJECT sharp enough to use? If `in_focus` is "no", `technical_issues` MUST include "out_of_focus", and `eye_focus` MUST be "soft" or "not_visible". If `in_focus` is "yes", `eye_focus` MUST be "sharp" and "out_of_focus" MUST NOT appear in technical_issues.
-- If `technical_issues` contains "out_of_focus", then `eye_focus` MUST be "soft" or "not_visible" AND `in_focus` MUST be "no". Saying "sharp" in one place while flagging out-of-focus in another is a forbidden contradiction.
+INTERNAL CONSISTENCY — these must agree. CHECK ALL OF THESE BEFORE RETURNING:
+- `in_focus` is the simple yes/no overall question: is the SUBJECT sharp enough to use? If `in_focus` is "no", `technical_issues` MUST include "out_of_focus", and `eye_focus` MUST be "soft" or "not_visible".
+- If `in_focus` is "yes" AND the eye is clearly visible in the frame, `eye_focus` MUST be "sharp" and "out_of_focus" MUST NOT appear in technical_issues.
+- **SILHOUETTE / DEEP SHADOW RULE: If `is_silhouette` is true, OR if the subject's face is in deep shadow with no visible eye / facial detail, `eye_focus` MUST be "not_visible". Never "sharp". You cannot see an eye that isn't lit. Saying "the bird is in focus, with sharp details" while the face is a black silhouette is a forbidden contradiction.**
+- If `technical_issues` contains "out_of_focus", then `eye_focus` MUST be "soft" or "not_visible" AND `in_focus` MUST be "no".
 - If `motion` is "blurred" because of camera shake, `technical_issues` MUST include "camera_shake".
-- Notes must never contradict the structured fields. If you write "tack sharp" in notes, eye_focus cannot be "soft" and out_of_focus cannot be in issues and in_focus must be "yes".
+- Notes must never contradict the structured fields. If you write "tack sharp eye" in notes, the eye must actually be visible AND sharp in the image. If you write "silhouette" the eye is by definition not_visible.
 
-KEEP DECISION — this is the cull decision. Be honest and somewhat strict; the photographer wants to spend time only on images worth keeping.
-- "no" if: in_focus="no", or any out_of_focus / camera_shake flag, or composition="weak" combined with no other redeeming qualities, or the subject is unidentifiable / clipped in a ruinous way.
-- "yes" if: technically clean (in_focus="yes", eye_focus="sharp" or n/a) AND has at least one of: clear subject, decent composition, interesting behavior, good light, or something distinctive about the moment.
-- When uncertain between yes and no, default to "no" — the photographer would rather review a missed maybe than waste time on a clearly bad image.
-- "keep" answers a different question than artistic quality. A technically perfect but boring portrait CAN still be a "keep" (it's usable). A flawed but rare moment CAN still be a "keep" (the moment matters). The Phase 2 Claude scorer will rank quality among keepers later — your job here is just to filter out the clearly unusable."""
+KEEP DECISION — this is the cull decision. **The default is "no". You must EARN a yes.** Most images on a wildlife shoot are not keepers — that's normal, and the photographer wants the cull to reflect that. Better to send a maybe to cull than to flood the keeper pile with mediocre frames.
+
+A keeper has BOTH:
+  (A) Technically usable: in_focus="yes", eye_focus="sharp" (NOT "not_visible" — see silhouette rule below), no major technical_issues. AND
+  (B) Something that earns its place: a clearly visible subject doing something readable (calling, eating, flying, looking at camera with engagement), good light, clear strong composition, or a distinctive moment.
+
+Default to "no" when:
+- in_focus="no" → no
+- Any "out_of_focus", "camera_shake", or "clipped_subject" issue → no
+- composition="weak" AND nothing else carrying it → no
+- Subject unidentifiable / face hidden / heavily obstructed → no
+- **eye_focus="not_visible" on a still wildlife subject** → no, unless the moment is genuinely exceptional (dramatic action, predation, courtship). A bird with its head turned away or backlit-into-silhouette with no behavior happening is NOT a keeper.
+
+**SILHOUETTES (`is_silhouette`=true) DEFAULT TO `keep`="no".** Silhouettes are an artistic choice the photographer makes deliberately for specific images — the cull AI should NOT pre-select them as keepers. A silhouette earns "yes" only if:
+- The subject's shape is clearly readable as the species (not just a generic blob), AND
+- Something is genuinely happening (dramatic flight pose, prey transfer, sunset-against-dramatic-sky), AND
+- The light itself is the photograph (golden hour, dramatic sky), not just "the sun was behind it and I lost detail".
+A backlit silhouette of a perched bird with no behavior is "no". The photographer will mark it "keep" themselves if they specifically wanted that silhouette.
+
+CALIBRATION EXAMPLES:
+- Backlit silhouette of a perched tern, even with prey in beak → keep="no". The eye isn't visible, the bird's body has no detail, the light isn't doing anything dramatic.
+- Clean portrait of a common cardinal in soft light, eye sharp → keep="yes". Usable stock-grade image.
+- Soft-focus shot of a rare species doing something exceptional (mating display) → keep="yes". The moment matters more than technical perfection.
+- A bird with its back turned, eye not visible, no behavior → keep="no".
+- A frame from a burst where the eye is closed → keep="no" (better frames almost always exist).
+- Overexposed sky with clipped highlights on the subject → keep="no".
+
+You are NOT scoring artistic merit — a separate scorer (Claude) handles ranking among keepers. Your job is the filter. Be strict at the filter."""
 
 
 _SHIPPED_AS_IS = """CRITICAL CONTEXT: this photographer SHIPS PHOTOS AS-IS. They will NOT do heavy \
