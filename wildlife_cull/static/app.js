@@ -141,6 +141,7 @@ function readFilters() {
     "filter-lighting": "lighting",
     "filter-silhouette": "silhouette",
     "filter-issue": "has_issue",
+    "filter-feedback": "has_feedback",
     "filter-subject": "subject_contains",
     "filter-min-artistic": "min_artistic",
     "filter-min-portfolio": "min_portfolio",
@@ -179,6 +180,7 @@ function renderCard(img) {
   for (const t of img.user_tags || []) card.classList.add(`tag-${t}`);
   if (img.ai_status === "error") card.classList.add("ai-status-error");
   if (img.ai_status === "cancelled") card.classList.add("ai-status-cancelled");
+  if (img.ai_feedback) card.classList.add("has-feedback");
   if (state.selected.has(img.id)) card.classList.add("selected");
 
   const im = document.createElement("img");
@@ -250,10 +252,70 @@ async function openModal(id) {
   $("#modal-img").src = `/api/preview/${id}`;
   $("#modal-filename").textContent = img.filename;
   renderAiBlock(img);
+  renderFeedback(img);
   setStars(img.user_rating || 0);
   setTags(img.user_tags || []);
   $("#notes-input").value = img.user_notes || "";
   $("#save-status").textContent = "";
+}
+
+function renderFeedback(img) {
+  const fb = img.ai_feedback || null;
+  const summary = $("#modal-feedback-summary");
+  if (fb) {
+    const bits = [];
+    if (fb.marked_wrong) bits.push("<b>Marked wrong</b>");
+    if (typeof fb.artistic === "number") bits.push(`Art ${formatScore(fb.artistic)}`);
+    if (typeof fb.portfolio === "number") bits.push(`Port ${formatScore(fb.portfolio)}`);
+    if (fb.animal_type) bits.push(`Type: ${esc(fb.animal_type)}`);
+    if (fb.species) bits.push(`Species: ${esc(fb.species)}`);
+    if (fb.eye_focus) bits.push(`Eye: ${esc(pretty(fb.eye_focus))}`);
+    if (fb.motion) bits.push(`Motion: ${esc(pretty(fb.motion))}`);
+    if (fb.composition) bits.push(`Composition: ${esc(pretty(fb.composition))}`);
+    if (fb.lighting) bits.push(`Lighting: ${esc(pretty(fb.lighting))}`);
+    if (typeof fb.is_silhouette === "boolean") bits.push(`Silhouette: ${fb.is_silhouette ? "Yes" : "No"}`);
+    if (fb.technical_issues) bits.push(`Issues: ${(fb.technical_issues || []).map(pretty).join(", ") || "none"}`);
+    const note = fb.note ? `<div class="fb-summary-note">${esc(fb.note)}</div>` : "";
+    summary.innerHTML = `<div class="fb-summary-title">YOUR CORRECTIONS</div><div class="fb-summary-fields">${bits.join(" · ")}</div>${note}`;
+    summary.classList.remove("hidden");
+  } else {
+    summary.classList.add("hidden");
+    summary.innerHTML = "";
+  }
+
+  const setVal = (id, v) => { const el = $(id); if (el) el.value = (v === undefined || v === null) ? "" : v; };
+  const setCheck = (id, v) => { const el = $(id); if (el) el.checked = !!v; };
+  setCheck("#fb-marked-wrong", fb && fb.marked_wrong);
+  setVal("#fb-artistic", fb && typeof fb.artistic === "number" ? fb.artistic : "");
+  setVal("#fb-portfolio", fb && typeof fb.portfolio === "number" ? fb.portfolio : "");
+  setVal("#fb-animal-type", fb && fb.animal_type);
+  setVal("#fb-species", fb && fb.species);
+  setVal("#fb-subject", fb && fb.subject);
+  setVal("#fb-eye-focus", fb && fb.eye_focus);
+  setVal("#fb-motion", fb && fb.motion);
+  setVal("#fb-composition", fb && fb.composition);
+  setVal("#fb-lighting", fb && fb.lighting);
+  setVal("#fb-silhouette", fb && (fb.is_silhouette === true ? "yes" : fb.is_silhouette === false ? "no" : ""));
+  setVal("#fb-note", fb && fb.note);
+  populateIssueChips(fb);
+  $("#fb-status").textContent = "";
+}
+
+function populateIssueChips(fb) {
+  const wrap = $("#fb-issue-chips");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  const vocab = (state.aiVocab && state.aiVocab.technical_issues) || [];
+  const selected = new Set((fb && fb.technical_issues) || []);
+  for (const v of vocab) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.dataset.value = v;
+    b.textContent = pretty(v);
+    if (selected.has(v)) b.classList.add("active");
+    b.onclick = () => b.classList.toggle("active");
+    wrap.appendChild(b);
+  }
 }
 
 function renderAiBlock(img) {
@@ -526,6 +588,7 @@ document.addEventListener("DOMContentLoaded", () => {
   for (const id of [
     "filter-ai-status", "filter-animal-type", "filter-eye-focus", "filter-motion",
     "filter-composition", "filter-lighting", "filter-silhouette", "filter-issue",
+    "filter-feedback",
   ]) {
     $("#" + id).onchange = refreshGrid;
   }
@@ -542,7 +605,7 @@ document.addEventListener("DOMContentLoaded", () => {
     for (const id of [
       "filter-ai-status", "filter-animal-type", "filter-species",
       "filter-eye-focus", "filter-motion", "filter-composition",
-      "filter-lighting", "filter-silhouette", "filter-issue",
+      "filter-lighting", "filter-silhouette", "filter-issue", "filter-feedback",
       "filter-subject", "filter-min-artistic", "filter-min-portfolio",
     ]) {
       $("#" + id).value = "";
@@ -571,6 +634,70 @@ document.addEventListener("DOMContentLoaded", () => {
     const scope = state.folder ? "in this folder" : "across all folders";
     if (!confirm(`Re-analyze every errored image ${scope}?`)) return;
     reanalyzeByStatus("error");
+  };
+
+  $("#fb-save").onclick = async () => {
+    if (!state.current) return;
+    const id = state.current.id;
+    const issues = [...document.querySelectorAll("#fb-issue-chips button.active")].map((b) => b.dataset.value);
+    const numOrNull = (sel) => {
+      const v = $(sel).value;
+      return v === "" ? null : Number(v);
+    };
+    const strOrNull = (sel) => {
+      const v = $(sel).value.trim();
+      return v === "" ? null : v;
+    };
+    const silVal = $("#fb-silhouette").value;
+    const body = {
+      marked_wrong: $("#fb-marked-wrong").checked,
+      artistic: numOrNull("#fb-artistic"),
+      portfolio: numOrNull("#fb-portfolio"),
+      animal_type: strOrNull("#fb-animal-type"),
+      species: strOrNull("#fb-species"),
+      subject: strOrNull("#fb-subject"),
+      eye_focus: strOrNull("#fb-eye-focus"),
+      motion: strOrNull("#fb-motion"),
+      composition: strOrNull("#fb-composition"),
+      lighting: strOrNull("#fb-lighting"),
+      is_silhouette: silVal === "yes" ? true : silVal === "no" ? false : null,
+      technical_issues: issues.length ? issues : null,
+      note: strOrNull("#fb-note"),
+    };
+    Object.keys(body).forEach((k) => { if (body[k] === null) delete body[k]; });
+    try {
+      const r = await jpost(`/api/image/${id}/feedback`, body);
+      $("#fb-status").textContent = "Saved.";
+      $("#fb-status").className = "fb-status ok";
+      state.current.ai_feedback = r.feedback;
+      renderFeedback(state.current);
+      const idx = state.images.findIndex((x) => x.id === id);
+      if (idx >= 0) state.images[idx].ai_feedback = r.feedback;
+      renderGrid();
+      refreshStats();
+    } catch (e) {
+      $("#fb-status").textContent = "Save failed: " + e.message;
+      $("#fb-status").className = "fb-status bad";
+    }
+  };
+  $("#fb-clear").onclick = async () => {
+    if (!state.current) return;
+    if (!confirm("Clear your corrections for this image?")) return;
+    const id = state.current.id;
+    try {
+      await fetch(`/api/image/${id}/feedback`, { method: "DELETE" });
+      state.current.ai_feedback = null;
+      renderFeedback(state.current);
+      const idx = state.images.findIndex((x) => x.id === id);
+      if (idx >= 0) state.images[idx].ai_feedback = null;
+      renderGrid();
+      refreshStats();
+      $("#fb-status").textContent = "Cleared.";
+      $("#fb-status").className = "fb-status";
+    } catch (e) {
+      $("#fb-status").textContent = "Clear failed: " + e.message;
+      $("#fb-status").className = "fb-status bad";
+    }
   };
 
   $("#modal-reanalyze").onclick = async () => {

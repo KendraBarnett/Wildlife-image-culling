@@ -90,6 +90,12 @@
     </select>
     <label>Issue:</label>
     <select id="filter-issue" data-vocab="technical_issues"><option value="">Any</option></select>
+    <label>Corrected:</label>
+    <select id="filter-feedback">
+      <option value="">Any</option>
+      <option value="yes">Has my corrections</option>
+      <option value="no">No corrections</option>
+    </select>
     <label>Subject contains:</label>
     <input id="filter-subject" type="text" placeholder="owl, gorilla…" />
     <label>Artistic ≥</label>
@@ -117,7 +123,43 @@
       <aside class="modal-side">
         <h2 id="modal-filename"></h2>
         <div id="modal-ai" class="ai-block"></div>
+        <div id="modal-feedback-summary" class="feedback-summary hidden"></div>
         <button id="modal-reanalyze" class="secondary modal-reanalyze">Re-analyze this image</button>
+        <details id="modal-feedback" class="feedback-block">
+          <summary>Train your eye on this image — correct the AI</summary>
+          <p class="feedback-help">Your corrections become training signal. They show up as truth in the UI, and once you have at least 5 corrections, the judges will see them as examples on every future analysis. Leave any field blank to keep the AI's value.</p>
+          <label class="fb-toggle"><input type="checkbox" id="fb-marked-wrong" /> Mark this whole analysis as wrong</label>
+          <div class="fb-grid">
+            <label>Your Artistic <input type="number" id="fb-artistic" min="0" max="10" step="0.1" /></label>
+            <label>Your Portfolio <input type="number" id="fb-portfolio" min="0" max="10" step="0.1" /></label>
+            <label>Type <select id="fb-animal-type" data-vocab="animal_type"><option value="">— keep AI —</option></select></label>
+            <label>Species <input type="text" id="fb-species" placeholder="—" /></label>
+            <label>Subject <input type="text" id="fb-subject" placeholder="—" /></label>
+            <label>Eye focus <select id="fb-eye-focus" data-vocab="eye_focus"><option value="">— keep AI —</option></select></label>
+            <label>Motion <select id="fb-motion" data-vocab="motion"><option value="">— keep AI —</option></select></label>
+            <label>Composition <select id="fb-composition" data-vocab="composition"><option value="">— keep AI —</option></select></label>
+            <label>Lighting <select id="fb-lighting" data-vocab="lighting"><option value="">— keep AI —</option></select></label>
+            <label>Silhouette
+              <select id="fb-silhouette">
+                <option value="">— keep AI —</option>
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </label>
+          </div>
+          <fieldset class="fb-issues">
+            <legend>Technical issues — your truth (overrides AI)</legend>
+            <div id="fb-issue-chips" class="chips"></div>
+          </fieldset>
+          <label class="fb-note">What did the AI get wrong, in plain English?
+            <textarea id="fb-note" rows="3" placeholder="e.g. 'eye is sharp, AI was wrong about out_of_focus'"></textarea>
+          </label>
+          <div class="fb-actions">
+            <button id="fb-save">Save corrections</button>
+            <button id="fb-clear" class="secondary">Clear feedback</button>
+            <span id="fb-status" class="fb-status"></span>
+          </div>
+        </details>
         <div class="rating">
           <label>Your rating</label>
           <div id="stars" class="stars" data-rating="0">

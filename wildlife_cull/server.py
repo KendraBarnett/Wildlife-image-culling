@@ -165,6 +165,7 @@ def api_images(
     species_contains: Optional[str] = None,
     subject_contains: Optional[str] = None,
     has_issue: Optional[str] = None,
+    has_feedback: Optional[str] = None,
     min_artistic: Optional[int] = None,
     min_portfolio: Optional[int] = None,
     limit: int = Query(default=500, le=2000),
@@ -213,6 +214,10 @@ def api_images(
     if has_issue:
         where.append("ai_technical_issues LIKE ?")
         params.append(f"%\"{has_issue}\"%")
+    if has_feedback == "yes":
+        where.append("ai_feedback_json IS NOT NULL")
+    elif has_feedback == "no":
+        where.append("ai_feedback_json IS NULL")
     if min_artistic is not None:
         where.append("ai_artistic_score >= ?")
         params.append(min_artistic)
@@ -225,7 +230,7 @@ def api_images(
         "ai_status, ai_artistic_score, ai_portfolio_score, "
         "ai_eye_focus, ai_motion, ai_composition, ai_lighting, "
         "ai_is_silhouette, ai_subject, ai_animal_type, ai_species, "
-        "ai_technical_issues, ai_judges_json, "
+        "ai_technical_issues, ai_judges_json, ai_feedback_json, "
         "user_rating, user_tags, user_notes "
         f"FROM images {where_sql} ORDER BY filename LIMIT ? OFFSET ?"
     )
@@ -259,6 +264,14 @@ def api_images(
         d["judges_done"] = sum(1 for v in judges.values() if isinstance(v, dict) and v.get("status") == "done")
         d["judges_total"] = len(ai.JUDGES)
         d.pop("ai_judges_json", None)
+        feedback = None
+        if d.get("ai_feedback_json"):
+            try:
+                feedback = json.loads(d["ai_feedback_json"])
+            except Exception:
+                feedback = None
+        d["ai_feedback"] = feedback
+        d.pop("ai_feedback_json", None)
         items.append(d)
     return {"images": items, "count": len(items)}
 
@@ -319,6 +332,13 @@ def api_image(image_id: int) -> dict:
             d["ai_judges"] = {}
     else:
         d["ai_judges"] = {}
+    if d.get("ai_feedback_json"):
+        try:
+            d["ai_feedback"] = json.loads(d["ai_feedback_json"])
+        except Exception:
+            d["ai_feedback"] = {}
+    else:
+        d["ai_feedback"] = None
     if d.get("ai_technical_issues"):
         try:
             d["ai_technical_issues"] = json.loads(d["ai_technical_issues"])
@@ -327,6 +347,43 @@ def api_image(image_id: int) -> dict:
     else:
         d["ai_technical_issues"] = []
     return d
+
+
+class FeedbackReq(BaseModel):
+    marked_wrong: bool = False
+    artistic: Optional[float] = Field(None, ge=0, le=10)
+    portfolio: Optional[float] = Field(None, ge=0, le=10)
+    eye_focus: Optional[str] = None
+    motion: Optional[str] = None
+    composition: Optional[str] = None
+    lighting: Optional[str] = None
+    animal_type: Optional[str] = None
+    species: Optional[str] = None
+    subject: Optional[str] = None
+    is_silhouette: Optional[bool] = None
+    technical_issues: Optional[list[str]] = None
+    note: Optional[str] = None
+
+
+@app.post("/api/image/{image_id}/feedback")
+def api_feedback(image_id: int, req: FeedbackReq) -> dict:
+    payload = req.model_dump(exclude_none=True)
+    with db.connect() as conn:
+        existing = conn.execute("SELECT id FROM images WHERE id=?", (image_id,)).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="not found")
+        db.set_feedback(conn, image_id, payload)
+    return {"ok": True, "feedback": payload}
+
+
+@app.delete("/api/image/{image_id}/feedback")
+def api_clear_feedback(image_id: int) -> dict:
+    with db.connect() as conn:
+        existing = conn.execute("SELECT id FROM images WHERE id=?", (image_id,)).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="not found")
+        db.clear_feedback(conn, image_id)
+    return {"ok": True}
 
 
 class RateReq(BaseModel):
@@ -402,6 +459,7 @@ def api_stats() -> dict:
                 SUM(CASE WHEN ai_status='error' THEN 1 ELSE 0 END) AS errored,
                 SUM(CASE WHEN ai_status='pending' AND ai_judges_json IS NOT NULL AND ai_judges_json != '' AND ai_judges_json != '{}' THEN 1 ELSE 0 END) AS partial,
                 SUM(CASE WHEN user_rating IS NOT NULL THEN 1 ELSE 0 END) AS rated,
+                SUM(CASE WHEN ai_feedback_json IS NOT NULL THEN 1 ELSE 0 END) AS feedback_count,
                 SUM(CASE WHEN embedding IS NOT NULL THEN 1 ELSE 0 END) AS embedded
             FROM images"""
         ).fetchone()

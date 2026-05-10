@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS images (
     ai_technical_issues TEXT,
     ai_analyzed_at REAL,
     ai_judges_json TEXT,
+    ai_feedback_json TEXT,
 
     embedding BLOB,
     embedding_model TEXT,
@@ -75,6 +76,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
         ("ai_animal_type", "ALTER TABLE images ADD COLUMN ai_animal_type TEXT"),
         ("ai_species", "ALTER TABLE images ADD COLUMN ai_species TEXT"),
         ("ai_judges_json", "ALTER TABLE images ADD COLUMN ai_judges_json TEXT"),
+        ("ai_feedback_json", "ALTER TABLE images ADD COLUMN ai_feedback_json TEXT"),
     ]:
         if name not in cols:
             conn.execute(ddl)
@@ -334,6 +336,46 @@ def set_ai_error(conn: sqlite3.Connection, image_id: int, message: str) -> None:
         "UPDATE images SET ai_status='error', ai_json=? WHERE id=?",
         (json.dumps({"error": message}), image_id),
     )
+
+
+def set_feedback(conn: sqlite3.Connection, image_id: int, feedback: dict) -> None:
+    feedback = dict(feedback or {})
+    feedback["ts"] = time.time()
+    conn.execute(
+        "UPDATE images SET ai_feedback_json=? WHERE id=?",
+        (json.dumps(feedback), image_id),
+    )
+
+
+def clear_feedback(conn: sqlite3.Connection, image_id: int) -> None:
+    conn.execute(
+        "UPDATE images SET ai_feedback_json=NULL WHERE id=?",
+        (image_id,),
+    )
+
+
+def list_feedback_examples(conn: sqlite3.Connection, limit: int = 50) -> list[dict]:
+    """Return user-corrected images suitable for few-shot prompt injection."""
+    rows = conn.execute(
+        "SELECT id, filename, ai_subject, ai_animal_type, ai_species, "
+        "ai_judges_json, ai_feedback_json, user_rating, user_notes "
+        "FROM images WHERE ai_feedback_json IS NOT NULL "
+        "ORDER BY id DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["ai_feedback"] = json.loads(d.pop("ai_feedback_json") or "{}")
+        except Exception:
+            d["ai_feedback"] = {}
+        try:
+            d["ai_judges"] = json.loads(d.pop("ai_judges_json") or "{}")
+        except Exception:
+            d["ai_judges"] = {}
+        out.append(d)
+    return out
 
 
 def set_embedding(conn: sqlite3.Connection, image_id: int, vec_bytes: bytes, model: str) -> None:
