@@ -21,21 +21,22 @@ pick values STRICTLY from the listed options for every enum field:
 
 {
   "subject": "<short phrase, e.g. 'great horned owl perched on branch'>",
-  "animal_type": "Mammal" | "Bird" | "Reptile" | "Amphibian" | "Fish" | "Insect" | "Other" | "Unknown",
+  "animal_type": <PICK EXACTLY ONE FROM THIS DROPDOWN — no other value is allowed: "Mammal" | "Bird" | "Reptile" | "Amphibian" | "Fish" | "Insect" | "Other" | "Unknown">,
   "species": "<best-guess common name, e.g. 'Mallard', 'Western Lowland Gorilla'. Use 'Unknown' if unsure>",
-  "eye_focus": "sharp" | "soft" | "not_visible" | "n/a",
-  "motion": "still" | "subtle" | "in_motion" | "blurred",
-  "composition": "strong" | "standard" | "weak",
-  "lighting": "harsh" | "soft" | "golden" | "low_light" | "backlit" | "overcast" | "mixed",
+  "eye_focus": <PICK EXACTLY ONE: "sharp" | "soft" | "not_visible" | "n/a">,
+  "motion": <PICK EXACTLY ONE: "still" | "subtle" | "in_motion" | "blurred">,
+  "composition": <PICK EXACTLY ONE: "strong" | "standard" | "weak">,
+  "lighting": <PICK EXACTLY ONE: "harsh" | "soft" | "golden" | "low_light" | "backlit" | "overcast" | "mixed">,
   "is_silhouette": true | false,
-  "technical_issues": [<zero or more of: "out_of_focus","camera_shake","clipped_subject","blown_highlights","heavy_noise","obstructed">],
+  "technical_issues": [<zero or more, each ONE OF: "out_of_focus","camera_shake","clipped_subject","blown_highlights","heavy_noise","obstructed">],
   "artistic_score": <integer 1-10>,
   "portfolio_potential": <integer 1-10>,
   "notes": "<one short sentence, optional>"
 }
 
 Schema rules:
-- Pick exactly one value for each enum (animal_type, eye_focus, motion, composition, lighting). Do not invent new values.
+- Every enum field above must be filled with one of the listed values. Treat them like a dropdown menu — invented values are forbidden.
+- `animal_type` MUST be exactly one of: Mammal, Bird, Reptile, Amphibian, Fish, Insect, Other, Unknown. Capitalized exactly as shown. If you are not sure of the type, return "Unknown" — do not write the species name there or invent a new category.
 - "low_light" goes in `lighting`, never in `technical_issues`.
 - `technical_issues` is for image flaws, not artistic choices."""
 
