@@ -29,6 +29,26 @@ async function jpost(url, body) {
   return r.json();
 }
 
+function renderBudgetPill(c) {
+  const el = $("#budget");
+  if (!el) return;
+  if (!c) { el.textContent = ""; el.className = "budget"; return; }
+  if (!c.api_key_set) {
+    el.textContent = "Claude: API key not set";
+    el.className = "budget budget-disabled";
+    el.title = "Set ANTHROPIC_API_KEY in scripts/run.sh to enable Phase 2 scoring.";
+    return;
+  }
+  const label = `Claude: $${c.spent_usd.toFixed(4)} of $${c.budget_usd.toFixed(2)} · ${c.images} scored · ${c.pct}%`;
+  el.textContent = label;
+  el.className = "budget budget-" + c.state;
+  el.title = c.state === "blocked"
+    ? "Budget cap reached. Raise CLAUDE_BUDGET_USD in scripts/run.sh and restart."
+    : c.state === "warning"
+    ? "Approaching budget cap (≥80%). New scoring still allowed until 100%."
+    : `Model: ${c.model}. Remaining: $${c.remaining_usd.toFixed(4)}.`;
+}
+
 async function refreshHealth() {
   try {
     const h = await jget("/api/health");
@@ -51,6 +71,7 @@ async function refreshHealth() {
       el.className = "health bad";
     }
     updateWorkerControls(!!h.worker_paused);
+    renderBudgetPill(h.claude);
   } catch (e) {
     $("#health").textContent = "server unreachable";
     $("#health").className = "health bad";
@@ -739,6 +760,35 @@ document.addEventListener("DOMContentLoaded", () => {
     refreshStats();
     refreshGrid();
   };
+
+  document.addEventListener("click", async (e) => {
+    if (e.target && e.target.id === "modal-score-claude") {
+      if (!state.current) return;
+      const id = state.current.id;
+      const btn = e.target;
+      btn.disabled = true;
+      btn.textContent = "Scoring…";
+      try {
+        const r = await jpost(`/api/image/${id}/score-with-claude`);
+        const idx = state.images.findIndex((x) => x.id === id);
+        if (idx >= 0) {
+          state.images[idx].claude_technical_score = r.score.technical_score;
+          state.images[idx].claude_aesthetic_score = r.score.aesthetic_score;
+          state.images[idx].claude_reasoning = r.score.reasoning;
+          state.images[idx].claude_cost_usd = r.score.cost_usd;
+          state.images[idx].claude_scored_at = Date.now() / 1000;
+          state.current = state.images[idx];
+        }
+        renderAiBlock(state.current);
+        renderGrid();
+        refreshHealth();
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = "Score with Claude";
+        alert("Score failed: " + err.message);
+      }
+    }
+  });
 
   $("#stars").onclick = (e) => {
     const v = parseInt(e.target.dataset.v);

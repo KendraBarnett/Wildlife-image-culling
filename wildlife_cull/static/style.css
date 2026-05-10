@@ -52,6 +52,12 @@ body.select-mode .card:hover { outline: 2px solid var(--accent); }
 .card.ai-status-error { box-shadow: inset 0 0 0 2px rgba(255, 100, 100, 0.5); }
 .card.ai-status-cancelled { opacity: 0.5; }
 .modal-reanalyze { margin-top: 8px; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+.header-pills { display: flex; gap: 10px; align-items: center; }
+.budget { font-size: 11px; padding: 4px 10px; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, monospace; border: 1px solid var(--border); background: var(--panel-2); color: var(--muted); }
+.budget.budget-ok { color: #6fdb95; border-color: rgba(80, 200, 120, 0.4); }
+.budget.budget-warning { color: #f5c451; border-color: rgba(245, 196, 81, 0.5); background: rgba(245, 196, 81, 0.08); }
+.budget.budget-blocked { color: #ff8a8a; border-color: rgba(255, 100, 100, 0.6); background: rgba(255, 100, 100, 0.12); }
+.budget.budget-disabled { opacity: 0.6; }
 .judges-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
 .triage-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .keep-badge { display: inline-block; padding: 4px 10px; border-radius: 4px; font-weight: 700; font-size: 13px; letter-spacing: 0.5px; }

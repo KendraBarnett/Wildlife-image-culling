@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import ai, bursts, db, ingest, xmp
+from . import claude as claude_mod
 from .config import SERVER_HOST, SERVER_PORT, VISION_MODEL
 from .worker import BackgroundWorker
 
@@ -53,6 +54,39 @@ def health() -> dict:
         "worker_in_flight": worker.in_flight,
         "feedback_corrections": fb_count,
         "feedback_active": min(fb_count, 5),
+        "claude": claude_mod.usage_summary(),
+    }
+
+
+@app.get("/api/claude/usage")
+def api_claude_usage() -> dict:
+    return claude_mod.usage_summary()
+
+
+@app.post("/api/image/{image_id}/score-with-claude")
+def api_score_with_claude(image_id: int) -> dict:
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT id, preview_path FROM images WHERE id=?", (image_id,)
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="image not found")
+    if not row["preview_path"]:
+        raise HTTPException(status_code=409, detail="image has no preview yet")
+    try:
+        result = claude_mod.score_image(image_id, Path(row["preview_path"]))
+    except claude_mod.NotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except claude_mod.BudgetExceeded as exc:
+        raise HTTPException(status_code=402, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}")
+    claude_mod.persist_score(image_id, result)
+    return {
+        "ok": True,
+        "image_id": image_id,
+        "score": result,
+        "usage": claude_mod.usage_summary(),
     }
 
 

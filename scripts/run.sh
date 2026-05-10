@@ -10,6 +10,20 @@ fi
 
 source .venv/bin/activate
 
+# Phase 2 — on-demand scoring with Claude Sonnet 4.6.
+# Uncomment and paste your key to enable the "Score with Claude" button.
+# Without it, Phase 1 (local triage) still runs normally; only Phase 2 is gated.
+# export ANTHROPIC_API_KEY="sk-ant-..."
+
+# Hard cap on Claude spend. The UI warns at 80% and blocks new calls at
+# 100%. Raise this number to allow more scoring; restart for it to take
+# effect. Per-image cost on Sonnet 4.6 with prompt caching is roughly
+# $0.005-$0.01, so $5 buys you ~500-1000 image scores.
+export CLAUDE_BUDGET_USD="${CLAUDE_BUDGET_USD:-5.00}"
+
+# Optional: pin to a specific model. Defaults to claude-sonnet-4-6.
+# export CLAUDE_MODEL="claude-sonnet-4-6"
+
 if ! curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
   echo "Ollama is not running. Starting it..."
   if command -v brew >/dev/null 2>&1; then

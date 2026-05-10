@@ -22,3 +22,11 @@ IMAGE_EXTS = RAW_EXTS | JPEG_EXTS
 
 PREVIEW_MAX_SIZE = 1600
 THUMB_MAX_SIZE = 400
+
+# Phase 2 — Claude API scoring (on-demand only)
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6")
+try:
+    CLAUDE_BUDGET_USD = float(os.environ.get("CLAUDE_BUDGET_USD", "5.00"))
+except ValueError:
+    CLAUDE_BUDGET_USD = 5.00
