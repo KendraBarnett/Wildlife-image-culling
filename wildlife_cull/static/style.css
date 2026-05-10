@@ -95,6 +95,8 @@ body.select-mode .card:hover { outline: 2px solid var(--accent); }
 .claude-not-scored { display: flex; align-items: center; gap: 12px; }
 .claude-cost-hint { font-size: 11px; color: var(--muted); }
 .scores.claude-scores { color: #d8b6ff; }
+.scores.paused { color: #f5c451; font-weight: 600; }
+.scores.offline { color: #ff8a8a; font-weight: 600; }
 .judge-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; min-height: 80px; display: flex; flex-direction: column; gap: 4px; }
 .judge-card.error { border-color: rgba(255, 100, 100, 0.5); background: rgba(255, 100, 100, 0.08); }
 .judge-card.pending { opacity: 0.55; }

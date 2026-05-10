@@ -127,8 +127,15 @@ async function refreshHealth() {
       el.textContent = h.ollama_issue || "issue";
       el.className = "health bad";
     }
-    updateWorkerControls(!!h.worker_paused);
+    state.workerPaused = !!h.worker_paused;
+    updateWorkerControls(state.workerPaused);
     renderBudgetPill(h.claude);
+    // If the pause state changed since last poll, re-render the grid so
+    // pending images flip between 'analyzing…' and 'paused'.
+    if (state._lastWorkerPaused !== state.workerPaused) {
+      state._lastWorkerPaused = state.workerPaused;
+      if (state.images && state.images.length) renderGrid();
+    }
   } catch (e) {
     $("#health").textContent = "server unreachable";
     $("#health").className = "health bad";
@@ -362,11 +369,24 @@ function renderCard(img) {
   } else if (img.ai_status === "done") {
     scores.textContent = img.ai_keep === "yes" ? "ready to score" : "";
   } else if (img.ai_status === "pending") {
-    scores.textContent = "analyzing…";
+    // Honest status — pending doesn't mean analyzing if the worker is
+    // paused (globally or for this image's folder).
+    const folderPaused = (state.folders || []).some(
+      (f) => f.folder === img.folder && f.paused
+    );
+    if (state.workerPaused || folderPaused) {
+      scores.textContent = "paused";
+      scores.classList.add("paused");
+    } else {
+      scores.textContent = "analyzing…";
+    }
   } else if (img.ai_status === "error") {
     scores.textContent = "ai error";
   } else if (img.ai_status === "cancelled") {
     scores.textContent = "cancelled";
+  } else if (img.ai_status === "unreachable") {
+    scores.textContent = "offline";
+    scores.classList.add("offline");
   }
   overlay.appendChild(scores);
   card.appendChild(overlay);
