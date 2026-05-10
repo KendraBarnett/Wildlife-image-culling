@@ -30,7 +30,7 @@ pick values STRICTLY from the listed options for every enum field:
   "lighting": <PICK EXACTLY ONE: "harsh" | "soft" | "golden" | "low_light" | "backlit" | "overcast" | "mixed">,
   "is_silhouette": true | false,
   "technical_issues": [<zero or more, each ONE OF: "out_of_focus","soft_edges","camera_shake","clipped_subject","blown_highlights","underexposed","harsh_backlight","heavy_noise","obstructed","cluttered_background","subject_too_small">],
-  "keep": <PICK EXACTLY ONE: "yes" | "no">,
+  "keep": <PICK EXACTLY ONE: "yes" | "maybe" | "no">,
   "notes": "<2-3 sentences. First: what the image actually shows (subject, light, composition, behavior). Second: technical and compositional state — name BOTH what works AND every flaw you can see, in plain language tied to specific parts of the frame ('body in shadow from the chest down', 'soft on the eye but beak is sharp', 'twig crossing the wing'). Third: WHY keep or don't keep, referencing what you just named. NEVER be a cheerleader — a keeper can have flaws and those flaws still need to be named. Don't write 'captures a clear and engaging moment' on a backlit-shadow shot. Don't write 'sharp details' if the sharpness is on the beak but the eye is in shadow. If technical_issues is empty, the notes should justify that — 'no visible technical issues; clean across the board'.>"
 }
 
@@ -89,20 +89,37 @@ If you can only see WHERE the eye is (a dark shape, an outline, a guess based on
 - If `motion` is "blurred" because of camera shake, `technical_issues` MUST include "camera_shake".
 - Notes must never contradict the structured fields. Writing "the bird is in focus with sharp details" while the eye is in shadow is a forbidden hallucination. Be specific about WHAT is sharp — if it's the beak but not the eye, say so.
 
-KEEP DECISION — this is the cull decision. **The default is "no". You must EARN a yes.** Most images on a wildlife shoot are not keepers — that's normal, and the photographer wants the cull to reflect that. Better to send a maybe to cull than to flood the keeper pile with mediocre frames.
+**FILL EVERY FIELD ON EVERY IMAGE, regardless of keep verdict.** Even if you decide keep="no", the photographer needs to know what was in the frame and what was wrong with it. Type, Species, Subject, In focus, Eye focus, Motion, Composition, Lighting, Silhouette, Issues, Keep, Notes — ALL must be populated based on what you actually see. Leaving fields blank or skipping the structured analysis when you decide to cull is forbidden. The photographer reviews rejected images too — they need the data.
 
-A keeper has BOTH:
-  (A) Technically usable: in_focus="yes", eye_focus="sharp" (NOT "not_visible" — see silhouette rule below), no major technical_issues. AND
-  (B) Something that earns its place: a clearly visible subject doing something readable (calling, eating, flying, looking at camera with engagement), good light, clear strong composition, or a distinctive moment.
+KEEP DECISION — three values: "yes", "maybe", "no". Be HONEST, not strict for strictness's sake. The goal is for the photographer to TRUST the verdict: if you say "yes", they expect a usable image; if you say "no", they expect a clear flaw they can see. Inventing flaws to justify "no" is just as bad as missing real flaws. Don't panic-cull a clearly competent image because some prior rule said "default to no" — those rules only apply when the conditions actually fire.
 
-Default to "no" when:
-- in_focus="no" → no
-- Any "out_of_focus", "camera_shake", or "clipped_subject" issue → no
-- composition="weak" AND nothing else carrying it → no
-- Subject unidentifiable / face hidden / heavily obstructed → no
-- **eye_focus="not_visible" on a still wildlife subject** → no, unless the moment is genuinely exceptional (dramatic action, predation, courtship). A bird with its head turned away or backlit-into-silhouette with no behavior happening is NOT a keeper.
-- **eye_focus="soft" with no exceptional moment** → no. A soft eye on a static wildlife portrait is a fail; the keeper would have a sharper neighbor in the same burst.
-- **Heavy-backlight / crushed-shadow subject** → no. If the subject's body is mostly in shadow (you cannot read feather or fur texture on most of the body), this is the silhouette-adjacent case. The image only works AS a silhouette — but the AI flagged is_silhouette=false because some rim or edge is visible, which is exactly the case where "strong composition + sharp beak" tricks the model into keeping a marginal frame. Default to no. The photographer marks it keep themselves if they specifically wanted that moody-backlight look.
+**"yes" — clear keeper.** A clean, well-executed image with a visible subject. Specifically:
+  (A) Technically usable: in_focus="yes", eye_focus="sharp", no severe technical_issues actually present in the frame.
+  (B) Subject is clearly identifiable: the animal's head/face is visible and you can read the subject as a wildlife photo, not just texture.
+  (C) Something supports it: good light, clear composition, an engaging subject (looking at camera, calling, doing something), or just a clean technically sound portrait of an interesting animal.
+
+A clean shot of a common animal in good light with a sharp visible eye IS a keeper. You don't need a "wow" moment for "yes" — a usable image is a keeper. Stock-quality is enough.
+
+**"maybe" — technically excellent but the SUBJECT is incomplete or ambiguous.** Use this when:
+  - The image is technically clean (sharp, well-exposed, well-composed, no major flaws) BUT the subject is partial / cropped / abstract — only feathers, only fur, only a body part. No full animal, no face. The image works as a STUDY of texture/color/pattern but not as a wildlife portrait.
+  - The composition cuts the animal in a way that's not clearly intentional but not damaging either.
+  - The moment is ambiguous — you can't tell if the photographer wanted this frame or it's an in-between burst frame.
+  - You're genuinely uncertain whether the photographer wanted this. The image is a HUMAN judgment call, not a clear cull.
+
+Use "maybe" SPARINGLY. It's the small subset where the technique is right but the subject choice needs a human eye. If the image has technical_issues that are real flaws (out_of_focus, camera_shake, harsh_backlight, etc.), it goes to "no" — those aren't maybes.
+
+**"no" — clear cull.** This is for images with actual identifiable flaws you can point to in the image. The condition has to actually FIRE in this specific image, not just be a default. Cull when any of these is TRUE about THIS image:
+- in_focus is genuinely "no" because you can see the subject is soft → no
+- You actually see out_of_focus, camera_shake, or clipped_subject damage to the subject → no
+- composition really is weak (subject dead-center with no light or behavior, distracting background you can't crop) AND nothing else carrying it → no
+- The subject's face is genuinely hidden / turned away / obstructed AND no exceptional moment is happening → no
+- eye_focus is genuinely "not_visible" on a static wildlife subject with no behavior → no
+- eye_focus is genuinely "soft" on a static portrait → no, the keeper neighbor is sharper
+- The body is genuinely in deep shadow with no readable detail (heavy-backlight, silhouette-adjacent) → no
+
+If NONE of these is actually visible in the image, it's NOT a "no". A clean, sharp portrait of an animal that just isn't doing anything dramatic is still a "yes" — usable images are keepers, "yes" doesn't require a wow moment.
+
+**CRITICAL — DO NOT INVENT ISSUES TO JUSTIFY A KEEP DECISION.** technical_issues is for ACTUAL VISIBLE FLAWS at this resolution. If you decided keep="no" because the subject is incomplete (only feathers visible, no face), DO NOT then add "out_of_focus" to technical_issues — the image is in focus, that's not the problem. The problem goes in the notes, plain language. Lying about a technical flaw to back up the cull verdict is the single worst failure mode: it tells the photographer the wrong thing about their craft.
 
 **SILHOUETTES (`is_silhouette`=true) DEFAULT TO `keep`="no".** Silhouettes are an artistic choice the photographer makes deliberately for specific images — the cull AI should NOT pre-select them as keepers. A silhouette earns "yes" only if:
 - The subject's shape is clearly readable as the species (not just a generic blob), AND
@@ -111,10 +128,11 @@ Default to "no" when:
 A backlit silhouette of a perched bird with no behavior is "no". The photographer will mark it "keep" themselves if they specifically wanted that silhouette.
 
 CALIBRATION EXAMPLES:
-- **Close-up of a peacock's train feathers showing many decorative eyespots, with the bird's actual head not visible in the frame** → `eye_focus="not_visible"` (the eyespots on feathers are NOT the bird's eye), `keep="no"`. Beautiful feather pattern but the photographer did not catch the actual animal's face. Notes should say: 'Peacock train feathers shown in detail; the bird's actual head is not visible in this frame. The decorative eyespots are not the animal's real eye.' Add `subject_too_small` or `clipped_subject` to technical_issues if applicable.
+- **Close-up of a peacock's train feathers showing many decorative eyespots, with the bird's actual head not visible in the frame. Image is TECHNICALLY EXCELLENT — sharp feathers, good color, strong light, clean composition.** → `eye_focus="not_visible"` (the eyespots on feathers are NOT the bird's eye), `in_focus="yes"` (the FEATHERS are in focus — don't lie about this), `technical_issues=[]` (NO out_of_focus, the image is sharp — adding fake issues to justify the cull is the worst failure mode), **`keep="maybe"`** — technically excellent but the SUBJECT is a partial detail study rather than a full wildlife portrait, the photographer needs to decide if they meant to shoot this as an abstract or wanted the full bird. Notes: 'Sharp, well-lit close-up of peacock train feathers; the bird's actual head and face are not in the frame. Decorative eyespots on the feathers are not the real eye. Image works as a texture/pattern study but not as a wildlife portrait — needs photographer's call.'
 - **A dark-furred animal (black cat, black bear, etc.) curled up or with its head tucked, where most of the body is in deep shadow and the face is barely visible** → `eye_focus="not_visible"`, add `underexposed` to technical_issues, `keep="no"`. Notes should say which parts of the animal you can and cannot see. 'Head is tucked into body / face mostly in shadow / can see fur but not facial features clearly' — be specific.
 - **Side profile of an Inca tern with a fish in beak, photographed against soft blue background. The bird's body is mostly in deep shadow — the eye is technically there but in shadow with no visible catchlight, only the beak and the fish are well-lit. is_silhouette is debatable — some rim light defines the white throat line, but the body interior has no readable feather detail.** → `eye_focus="not_visible"` (no catchlight, no iris structure visible), `is_silhouette` can be true OR false but it doesn't change the verdict, add `underexposed` and `harsh_backlight` to technical_issues, **`keep="no"`**. The composition is fine and the moment (prey transfer) is fine, but the image only works as a silhouette. The photographer will mark it keep if they specifically wanted that moody-backlight look — the cull AI should NOT pre-select it.
 - Backlit silhouette of a perched tern, even with prey in beak → keep="no". Same reasoning as above.
+- **Close-up portrait of a red panda's face — eyes clearly visible looking at camera or near-camera, fur detail rendered well, soft natural light, clean composition, no harsh shadows on the face, sharp eye area.** → `in_focus="yes"`, `eye_focus="sharp"` (the eyes ARE visible and ARE rendered with detail), `technical_issues=[]` (no actual visible flaw), **`keep="yes"`**. This is the prototypical clean wildlife portrait. Do NOT flag it as out_of_focus to justify a cull — it is in focus and it is a keeper. Notes: 'Sharp portrait of a red panda, eyes visible with clear iris/catchlight detail, soft natural front-light, no technical issues.'
 - Clean portrait of a common cardinal in soft front-light, eye sharp with visible catchlight → keep="yes". Usable stock-grade image.
 - Soft-focus shot of a rare species doing something exceptional (mating display) → keep="yes". The moment matters more than technical perfection.
 - A bird with its back turned, eye not visible, no behavior → keep="no".
@@ -153,7 +171,7 @@ photographer would rather review a missed maybe than waste time on a clearly bad
 AI_VOCAB = {
     "animal_type": ["Mammal", "Bird", "Reptile", "Amphibian", "Fish", "Insect", "Other", "Unknown"],
     "in_focus": ["yes", "no"],
-    "keep": ["yes", "no"],
+    "keep": ["yes", "maybe", "no"],
     "eye_focus": ["sharp", "soft", "not_visible", "n/a"],
     "motion": ["still", "subtle", "in_motion", "blurred"],
     "composition": ["strong", "standard", "weak"],
