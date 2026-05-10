@@ -28,6 +28,7 @@ the user is still ingesting more frames into the same shoot.
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import Iterable, Optional
 
 import numpy as np
@@ -211,25 +212,34 @@ def backfill_capture_times() -> dict:
     started = time.time()
     updated = 0
     skipped = 0
+    failed = 0
+    errors: list[str] = []
     with db.connect() as conn:
         rows = conn.execute(
             "SELECT id, path FROM images WHERE capture_time IS NULL "
             "AND path IS NOT NULL"
         ).fetchall()
         for r in rows:
-            t = ingest.extract_capture_time(Path(r["path"]))
-            if t is not None:
-                conn.execute(
-                    "UPDATE images SET capture_time=? WHERE id=?",
-                    (t, r["id"]),
-                )
-                updated += 1
-            else:
-                skipped += 1
+            try:
+                t = ingest.extract_capture_time(Path(r["path"]))
+                if t is not None:
+                    conn.execute(
+                        "UPDATE images SET capture_time=? WHERE id=?",
+                        (t, r["id"]),
+                    )
+                    updated += 1
+                else:
+                    skipped += 1
+            except Exception as exc:
+                failed += 1
+                if len(errors) < 10:
+                    errors.append(f"{r['path']}: {type(exc).__name__}: {exc}")
     return {
-        "scanned": updated + skipped,
+        "scanned": updated + skipped + failed,
         "updated": updated,
         "skipped": skipped,
+        "failed": failed,
+        "errors": errors,
         "elapsed_sec": round(time.time() - started, 2),
     }
 
