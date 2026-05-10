@@ -351,8 +351,11 @@ function renderCard(img) {
     else if (img.ai_motion === "blurred") badges.appendChild(badge("blur", "warn"));
     if (img.ai_is_silhouette) badges.appendChild(badge("silh", "silh"));
   }
-  if (img.burst_role === "best") badges.appendChild(badge(`★ best of #${img.burst_id}`, "burst-best"));
-  else if (img.burst_role === "alt") badges.appendChild(badge(`burst #${img.burst_id}`, "burst-alt"));
+  if (img.burst_role === "best") badges.appendChild(badge(`★ #1 of burst ${img.burst_id}`, "burst-best"));
+  else if (img.burst_role === "alt") {
+    const rank = img.burst_rank ? `#${img.burst_rank}` : "alt";
+    badges.appendChild(badge(`${rank} of burst ${img.burst_id}`, "burst-alt"));
+  }
   card.appendChild(badges);
 
   const overlay = document.createElement("div");
@@ -655,7 +658,7 @@ function renderAiBlock(img) {
     </div>
     ${claudeBlock}
     ${exifBlock}
-    ${img.burst_id ? `<div class="row"><span>Burst</span><strong>#${img.burst_id} · ${esc(pretty(img.burst_role || ""))}</strong></div>` : ""}
+    ${img.burst_id ? `<div class="row"><span>Burst</span><strong>burst ${img.burst_id} · ${img.burst_rank ? `rank ${img.burst_rank}` : esc(pretty(img.burst_role || ""))}${img.burst_role === "best" ? " ★" : ""}</strong></div>` : ""}
     <div class="row"><span>Type</span><strong>${esc(a.animal_type) || "—"}</strong></div>
     <div class="row"><span>Species</span><strong>${esc(a.species) || "—"}</strong></div>
     <div class="row"><span>Subject</span><strong>${esc(a.subject) || "—"}</strong></div>

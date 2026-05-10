@@ -50,6 +50,42 @@ def _vec_from_bytes(buf: bytes) -> np.ndarray:
     return np.frombuffer(buf, dtype=np.float32)
 
 
+# Field-by-field bonus/penalty weights for the burst composite score.
+# Tuned so the AI fields dominate (which the user explicitly asked for —
+# ranking should reflect the AI's judgment, not just file sharpness).
+# Higher = better, sorting descending picks the keeper.
+_KEEP_W = {"yes": 10.0, "no": -8.0}
+_IN_FOCUS_W = {"yes": 5.0, "no": -10.0}
+_EYE_FOCUS_W = {"sharp": 3.0, "soft": -2.0, "not_visible": -1.0, "n/a": 0.0}
+_COMPOSITION_W = {"strong": 2.0, "standard": 0.0, "weak": -2.0}
+
+
+def _composite_score(r) -> float:
+    """Weighted score combining every AI signal we have for the image.
+    Pure sharpness contributes a little (focus_score, 0-100ish range) as
+    a tie-breaker; the AI's keep/in_focus/eye_focus calls dominate; and
+    when Phase 2 has scored the image, the Claude technical + aesthetic
+    scores layer on top. Two images with the same triage verdict get
+    differentiated by Claude scores when available, by focus_score when
+    not."""
+    s = 0.0
+    s += _KEEP_W.get(r["ai_keep"], 0.0)
+    s += _IN_FOCUS_W.get(r["ai_in_focus"], 0.0)
+    s += _EYE_FOCUS_W.get(r["ai_eye_focus"], 0.0)
+    s += _COMPOSITION_W.get(r["ai_composition"], 0.0)
+    if r["focus_score"] is not None:
+        # Scale: focus_score is roughly 0-200; normalize so even a great
+        # value (150+) only contributes ~1.5 — less than ai_in_focus.
+        s += min(r["focus_score"], 200.0) / 100.0
+    if r["claude_technical_score"] is not None:
+        # /10 score; weight at 0.6 so it can flip ties but not override
+        # the triage verdict.
+        s += r["claude_technical_score"] * 0.6
+    if r["claude_aesthetic_score"] is not None:
+        s += r["claude_aesthetic_score"] * 0.6
+    return s
+
+
 def recompute_bursts_for_folder(
     folder: str,
     time_gap_sec: Optional[float] = None,
@@ -71,11 +107,24 @@ def recompute_bursts_for_folder(
             "WHERE folder=? AND embedding IS NOT NULL",
             (folder,),
         ).fetchone()["n"]
+        pending_analysis = conn.execute(
+            "SELECT COUNT(*) AS n FROM images "
+            "WHERE folder=? AND ai_status NOT IN ('done', 'error', 'cancelled')",
+            (folder,),
+        ).fetchone()["n"]
 
+        # Bursts only group images the AI has reviewed. Ranking depends
+        # on ai_keep / ai_in_focus / ai_eye_focus / ai_composition — if
+        # those aren't filled yet the "best" pick would just be sharpness,
+        # which is what the user explicitly didn't want. Click Find
+        # bursts again once analysis completes.
         rows = conn.execute(
             "SELECT id, mtime, capture_time, embedding, focus_score, "
-            "claude_technical_score "
-            "FROM images WHERE folder=? AND embedding IS NOT NULL "
+            "ai_status, ai_keep, ai_in_focus, ai_eye_focus, ai_composition, "
+            "claude_technical_score, claude_aesthetic_score "
+            "FROM images WHERE folder=? "
+            "AND embedding IS NOT NULL "
+            "AND ai_status='done' "
             "ORDER BY COALESCE(capture_time, mtime), id",
             (folder,),
         ).fetchall()
@@ -91,19 +140,32 @@ def recompute_bursts_for_folder(
         )
 
         if not rows:
+            if total_in_folder == 0:
+                reason = "Folder has no images."
+            elif with_embedding == 0:
+                reason = (
+                    "No images in this folder have CLIP embeddings yet. "
+                    "The embedder runs in the background after ingest — "
+                    "wait a minute and try again."
+                )
+            else:
+                reason = (
+                    f"None of the {with_embedding} embedded images in this "
+                    f"folder have finished AI analysis yet ({pending_analysis} "
+                    f"still pending). Burst ranking uses the AI judgments to "
+                    f"pick the best frame — click Find bursts again once "
+                    f"analysis completes."
+                )
             return {
                 "folder": folder,
                 "bursts": 0,
                 "images_in_bursts": 0,
                 "total_in_folder": total_in_folder,
-                "with_embedding": 0,
+                "with_embedding": with_embedding,
                 "with_capture_time": 0,
+                "pending_analysis": pending_analysis,
                 "elapsed_sec": round(time.time() - started, 2),
-                "reason": (
-                    "No images in this folder have CLIP embeddings yet. "
-                    "The embedder runs in the background after ingest — "
-                    "wait a minute and try again."
-                ) if total_in_folder > 0 else "Folder has no images.",
+                "reason": reason,
             }
 
         groups: list[list[dict]] = []
@@ -125,7 +187,7 @@ def recompute_bursts_for_folder(
                 "t": t,
                 "vec": vec,
                 "focus": r["focus_score"] if r["focus_score"] is not None else 0.0,
-                "art": r["claude_technical_score"] if r["claude_technical_score"] is not None else 0.0,
+                "score": _composite_score(r),
             }
             if not current:
                 current = [entry]
@@ -157,12 +219,16 @@ def recompute_bursts_for_folder(
         next_id = (conn.execute("SELECT COALESCE(MAX(burst_id), 0) AS m FROM images").fetchone()["m"]) or 0
         for g in groups:
             next_id += 1
-            best = max(g, key=lambda e: (e["focus"], e["art"]))
-            for entry in g:
-                role = "best" if entry["id"] == best["id"] else "alt"
+            # Rank every frame in the group — not just one 'best'. Highest
+            # composite score = rank 1 ('best'); the rest are ranked 2..N
+            # so the photographer can see the runner-up next to the winner.
+            ranked = sorted(g, key=lambda e: (e["score"], e["focus"]), reverse=True)
+            for rank, entry in enumerate(ranked, start=1):
+                role = "best" if rank == 1 else "alt"
                 conn.execute(
-                    "UPDATE images SET burst_id=?, burst_role=? WHERE id=?",
-                    (next_id, role, entry["id"]),
+                    "UPDATE images SET burst_id=?, burst_role=?, burst_rank=? "
+                    "WHERE id=?",
+                    (next_id, role, rank, entry["id"]),
                 )
 
     reason = None

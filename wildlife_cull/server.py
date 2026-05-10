@@ -474,7 +474,7 @@ def api_images(
         "ai_in_focus, ai_eye_focus, ai_motion, ai_composition, ai_lighting, "
         "ai_is_silhouette, ai_subject, ai_animal_type, ai_species, "
         "ai_technical_issues, ai_judges_json, ai_feedback_json, "
-        "focus_score, focus_label, burst_id, burst_role, "
+        "focus_score, focus_label, burst_id, burst_role, burst_rank, "
         "claude_technical_score, claude_aesthetic_score, claude_reasoning, "
         "claude_scored_at, claude_cost_usd, "
         "capture_time, exif_camera, exif_lens, exif_focal_length, "
