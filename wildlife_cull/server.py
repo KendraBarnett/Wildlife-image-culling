@@ -50,6 +50,7 @@ def health() -> dict:
         "worker_last_error": worker.last_error,
         "worker_paused": worker.paused,
         "worker_last_timing": worker.last_timing,
+        "worker_in_flight": worker.in_flight,
         "feedback_corrections": fb_count,
         "feedback_active": min(fb_count, 5),
     }

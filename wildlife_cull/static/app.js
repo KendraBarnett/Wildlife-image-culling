@@ -41,7 +41,10 @@ async function refreshHealth() {
       const timing = t
         ? ` · last: ${t.total_secs}s (enc ${t.image_encode_secs}s, prompt ${t.prompt_eval_secs ?? "?"}s, gen ${t.eval_secs ?? "?"}s)`
         : "";
-      el.textContent = `ready · ${h.vision_model}${trained}${timing}`;
+      const inflight = h.worker_in_flight
+        ? ` · working on ${h.worker_in_flight.filename} (${Math.round(Date.now()/1000 - h.worker_in_flight.started_at)}s)`
+        : "";
+      el.textContent = `ready · ${h.vision_model}${trained}${inflight}${timing}`;
       el.className = "health ok";
     } else {
       el.textContent = h.ollama_issue || "issue";

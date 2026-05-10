@@ -23,6 +23,7 @@ class BackgroundWorker:
         self._current_judge_idx = 0
         self._warmed_judge: str | None = None
         self.last_timing: dict | None = None
+        self.in_flight: dict | None = None
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -134,6 +135,11 @@ class BackgroundWorker:
         with db.connect() as conn:
             feedback_rows = db.list_feedback_examples(conn, limit=10)
         examples_block = ai.format_feedback_block(feedback_rows, max_examples=5)
+        self.in_flight = {
+            "filename": row["filename"],
+            "judge": judge["name"],
+            "started_at": ts,
+        }
         try:
             parsed, raw, timing = ai.analyze_with_judge(
                 judge,
@@ -175,4 +181,6 @@ class BackgroundWorker:
                     payload=None, raw=None, error=detail, ts=ts,
                 )
                 db.finalize_image_if_complete(conn, row["id"], [j["name"] for j in ai.JUDGES])
+        finally:
+            self.in_flight = None
         return True

@@ -302,8 +302,8 @@ def analyze_with_judge(
     judge: dict,
     preview_path: Path,
     examples_block: str = "",
-    idle_timeout: float = 300.0,
-    total_timeout: float = 900.0,
+    idle_timeout: float = 90.0,
+    total_timeout: float = 420.0,
 ) -> tuple[dict, str, dict]:
     if not preview_path.exists():
         raise FileNotFoundError(f"Preview missing: {preview_path}")
@@ -336,7 +336,10 @@ def analyze_with_judge(
                     if not line:
                         continue
                     if time.time() - started > total_timeout:
-                        raise RuntimeError(f"Ollama exceeded total timeout of {total_timeout:.0f}s")
+                        raise RuntimeError(
+                            f"WATCHDOG: ollama exceeded total timeout of {total_timeout:.0f}s "
+                            f"(model={judge['model']}). Skipping this image."
+                        )
                     try:
                         evt = json.loads(line)
                     except json.JSONDecodeError:
@@ -352,6 +355,11 @@ def analyze_with_judge(
                     if evt.get("done"):
                         final_evt = evt
                         break
+    except httpx.ReadTimeout as exc:
+        raise RuntimeError(
+            f"WATCHDOG: ollama stopped sending data for {idle_timeout:.0f}s "
+            f"(model={judge['model']}). Likely stuck on this image — skipping."
+        ) from exc
     except httpx.RequestError as exc:
         raise RuntimeError(f"Cannot reach Ollama at {OLLAMA_HOST}: {exc}") from exc
     if last_error:
