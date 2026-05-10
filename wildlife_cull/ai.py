@@ -31,14 +31,32 @@ pick values STRICTLY from the listed options for every enum field:
   "technical_issues": [<zero or more, each ONE OF: "out_of_focus","camera_shake","clipped_subject","blown_highlights","heavy_noise","obstructed">],
   "artistic_score": <number 1.0-10.0, ONE decimal place, e.g. 4.3 or 7.1>,
   "portfolio_potential": <number 1.0-10.0, ONE decimal place, e.g. 5.7 or 8.2>,
-  "notes": "<one short sentence, optional>"
+  "notes": "<2-3 sentences. First sentence: what the image actually shows and what works about it (subject, light, composition, behavior). Second sentence: what holds it back, with specifics. Optional third sentence: why this scored where it did. Be SPECIFIC and CONCRETE. NEVER write empty contradictions like 'good, but blurry' — name strengths and flaws separately and tie each to what you can see.>"
 }
 
 Schema rules:
 - Every enum field above must be filled with one of the listed values. Treat them like a dropdown menu — invented values are forbidden.
 - `animal_type` MUST be exactly one of: Mammal, Bird, Reptile, Amphibian, Fish, Insect, Other, Unknown. Capitalized exactly as shown. If you are not sure of the type, return "Unknown" — do not write the species name there or invent a new category.
 - "low_light" goes in `lighting`, never in `technical_issues`.
-- `technical_issues` is for image flaws, not artistic choices."""
+- `technical_issues` is for image flaws, not artistic choices.
+
+DO NOT INVENT FLAWS. The single biggest failure mode is hallucinating problems that aren't visible. Apply these rules:
+- `technical_issues` must be CONSERVATIVE. Only flag a problem you can clearly see at this resolution. When in doubt, leave the array EMPTY. An empty array is the correct answer for most images.
+- For every entry you put in `technical_issues`, your notes MUST describe the specific area of the frame where it appears. If you cannot describe where, do not list the issue.
+- Do not flag "out_of_focus" because the background is blurred — background blur is normal bokeh, not a flaw. Out-of-focus is only a flaw if it affects the SUBJECT.
+- Do not flag "blown_highlights" unless you can actually see white pixels with no detail in the subject area.
+
+INTERNAL CONSISTENCY — these must agree:
+- If `technical_issues` contains "out_of_focus", then `eye_focus` MUST be "soft" or "not_visible". Saying "sharp" in one place while flagging out-of-focus in another is a forbidden contradiction.
+- If `motion` is "blurred" because of camera shake, `technical_issues` MUST include "camera_shake".
+- Notes must never contradict the structured fields. If you write "tack sharp" in notes, eye_focus cannot be "soft" and out_of_focus cannot be in issues.
+
+SCORE CAPS WHEN A REAL ISSUE IS PRESENT (only apply if the issue is genuine, not invented):
+- Any `out_of_focus` flag: cap BOTH artistic_score AND portfolio_potential at 3.0. Out-of-focus images cannot ship.
+- Any `camera_shake` flag: cap both at 3.0.
+- Any `clipped_subject` flag: cap both at 4.0.
+- Any `blown_highlights` flag where the highlights are on the subject: cap both at 4.5.
+- Any `obstructed` flag: cap both at 4.5."""
 
 
 _SHIPPED_AS_IS = """CRITICAL CONTEXT: this photographer SHIPS PHOTOS AS-IS. They will NOT do heavy \
