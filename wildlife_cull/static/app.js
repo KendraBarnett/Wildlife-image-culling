@@ -364,7 +364,7 @@ function renderCard(img) {
   const scores = document.createElement("span");
   scores.className = "scores";
   if (img.claude_technical_score != null || img.claude_aesthetic_score != null) {
-    scores.textContent = `tech ${formatScore(img.claude_technical_score)} · aest ${formatScore(img.claude_aesthetic_score)}`;
+    scores.textContent = `Technical ${formatScore(img.claude_technical_score)} · Aesthetic ${formatScore(img.claude_aesthetic_score)}`;
     scores.classList.add("claude-scores");
   } else if (img.ai_status === "done") {
     scores.textContent = img.ai_keep === "yes" ? "ready to score" : "";
