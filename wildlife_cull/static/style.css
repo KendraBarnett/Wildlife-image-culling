@@ -105,6 +105,7 @@ body.select-mode .card:hover { outline: 2px solid var(--accent); }
 .triage-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .keep-badge { display: inline-block; padding: 4px 10px; border-radius: 4px; font-weight: 700; font-size: 13px; letter-spacing: 0.5px; }
 .keep-badge.keep-yes { background: rgba(80, 200, 120, 0.25); color: #6fdb95; border: 1px solid rgba(80, 200, 120, 0.5); }
+.keep-badge.keep-maybe { background: rgba(245, 196, 81, 0.18); color: #f5c451; border: 1px solid rgba(245, 196, 81, 0.5); }
 .keep-badge.keep-no { background: rgba(255, 100, 100, 0.18); color: #ff8a8a; border: 1px solid rgba(255, 100, 100, 0.45); }
 .keep-badge.keep-unknown { background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); }
 .triage-model { font-size: 10px; font-family: ui-monospace, SFMono-Regular, monospace; }

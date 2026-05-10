@@ -361,7 +361,7 @@ class BulkScorer:
             with db.connect() as conn:
                 rows = conn.execute(
                     "SELECT id, filename, preview_path FROM images "
-                    "WHERE ai_keep='yes' "
+                    "WHERE ai_keep IN ('yes', 'maybe') "
                     "AND claude_scored_at IS NULL "
                     "AND preview_path IS NOT NULL "
                     "AND ai_status NOT IN ('cancelled') "

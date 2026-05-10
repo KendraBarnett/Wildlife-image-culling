@@ -56,9 +56,15 @@ def _ai_label_for(field: str, value: str) -> Optional[str]:
     if value in (None, "", "n/a", "Unknown", "unknown"):
         return None
     if field == "keep":
-        return "Keep" if value == "yes" else "Cull"
+        if value == "yes": return "Keep"
+        if value == "maybe": return "Maybe"
+        if value == "no": return "Cull"
+        return None
     if field == "in_focus":
-        return "InFocus" if value == "yes" else "OOF"
+        if value == "yes": return "InFocus"
+        if value == "no": return "OOF"
+        # 'unsure' produces no tag — uncertainty isn't a Lightroom filter.
+        return None
     if field == "eye_focus":
         return f"Eye-{_pretty(value)}"
     if field == "motion":

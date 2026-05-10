@@ -344,6 +344,7 @@ function renderCard(img) {
   const badges = document.createElement("div");
   badges.className = "badges";
   if (img.ai_keep === "yes") badges.appendChild(badge("KEEP", "good"));
+  else if (img.ai_keep === "maybe") badges.appendChild(badge("MAYBE", "warn"));
   else if (img.ai_keep === "no") badges.appendChild(badge("cull", "bad"));
   if (img.ai_status === "done") {
     if (img.ai_in_focus === "no") badges.appendChild(badge("OOF", "bad"));
@@ -668,6 +669,8 @@ function renderAiBlock(img) {
 
   const keepBadge = a.keep === "yes"
     ? `<span class="keep-badge keep-yes">KEEP</span>`
+    : a.keep === "maybe"
+    ? `<span class="keep-badge keep-maybe">MAYBE — REVIEW</span>`
     : a.keep === "no"
     ? `<span class="keep-badge keep-no">DON'T KEEP</span>`
     : `<span class="keep-badge keep-unknown">—</span>`;
@@ -699,7 +702,7 @@ function renderAiBlock(img) {
     <div class="row"><span>Type</span><strong>${esc(a.animal_type) || "—"}</strong></div>
     <div class="row"><span>Species</span><strong>${esc(a.species) || "—"}</strong></div>
     <div class="row"><span>Subject</span><strong>${esc(a.subject) || "—"}</strong></div>
-    <div class="row"><span>In focus</span><strong>${a.in_focus === "yes" ? "Yes" : a.in_focus === "no" ? "No" : "—"}</strong></div>
+    <div class="row"><span>In focus</span><strong>${a.in_focus === "yes" ? "Yes" : a.in_focus === "no" ? "No" : a.in_focus === "unsure" ? "Unsure" : "—"}</strong></div>
     <div class="row"><span>Eye focus</span><strong>${esc(pretty(a.eye_focus)) || "—"}</strong></div>
     <div class="row"><span>Motion</span><strong>${esc(pretty(a.motion)) || "—"}</strong></div>
     <div class="row"><span>Composition</span><strong>${esc(pretty(a.composition)) || "—"}</strong></div>
