@@ -70,6 +70,29 @@ body.select-mode .card:hover { outline: 2px solid var(--accent); }
 .bulk-divider { color: var(--border); margin: 0 4px; }
 .bulk-info.bulk-done { color: #6fdb95; }
 .bulk-info.bulk-blocked { color: #ff8a8a; }
+
+/* Bursts have their own row now — burst-specific controls live here
+   instead of mixing into the filter bar. */
+#bursts-bar { display: flex; align-items: center; gap: 12px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
+.bar-label { font-size: 11px; letter-spacing: 1.5px; color: var(--muted); text-transform: uppercase; min-width: 50px; }
+
+/* Bulk bar split into three labelled groups so it scans as
+   'selection | main actions | tools' instead of one long row. */
+#bulk-bar { display: flex; align-items: center; gap: 16px; padding: 8px 16px; flex-wrap: wrap; }
+.bulk-group { display: flex; align-items: center; gap: 8px; }
+.bulk-group + .bulk-group { border-left: 1px solid var(--border); padding-left: 16px; }
+.bulk-group-tools { margin-left: auto; }
+
+/* Tools dropdown — uses <details>/<summary> for a click-to-toggle
+   menu, no JS state needed. */
+.tools-menu { position: relative; }
+.tools-menu > summary { list-style: none; cursor: pointer; padding: 4px 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 4px; color: var(--fg); font-size: 12px; }
+.tools-menu > summary::-webkit-details-marker { display: none; }
+.tools-menu > summary:hover { background: var(--panel-2); }
+.tools-menu[open] > summary { background: var(--panel-2); }
+.tools-menu-panel { position: absolute; right: 0; top: calc(100% + 4px); background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px; display: flex; flex-direction: column; gap: 4px; min-width: 240px; z-index: 50; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); }
+.tools-menu-panel button { text-align: left; }
+.tools-stats { font-size: 11px; color: var(--muted); padding-top: 6px; border-top: 1px solid var(--border); margin-top: 4px; }
 .modal-small .modal-content, .modal-content.modal-small { max-width: 520px; padding: 24px; }
 .modal-small h2 { margin-top: 0; }
 .bulk-tag-custom { display: flex; flex-direction: column; gap: 4px; margin: 12px 0; }

@@ -936,7 +936,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     const gap = parseFloat($("#burst-gap").value) || 120;
     const sim = parseFloat($("#burst-sim").value) || 0.85;
-    $("#ingest-status").textContent = `Finding bursts (gap ${gap}s, sim ${sim})…`;
+    const status = $("#bursts-status");
+    status.textContent = `Finding bursts (gap ${gap}s, sim ${sim})…`;
+    status.className = "bulk-info";
     try {
       const r = await jpost("/api/bursts/recompute", {
         folder: state.folder,
@@ -945,17 +947,18 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       let msg = `${r.bursts} burst(s) · ${r.images_in_bursts} frames`;
       if (r.bursts === 0 && r.reason) {
-        msg = `0 bursts. ${r.reason}`;
-        if (r.with_capture_time === 0 && r.total_in_folder > 0) {
-          msg += " Or run 'Backfill capture times'.";
+        msg = r.reason;
+        if (r.with_capture_time === 0 && r.total_in_folder > 0 && r.with_embedding > 0) {
+          msg += " Or run Tools → Backfill EXIF.";
         }
       } else {
-        msg += ` (gap ${r.time_gap_sec}s, sim ${r.sim_threshold}, ${r.with_embedding}/${r.total_in_folder} embedded, ${r.elapsed_sec}s)`;
+        msg += ` (gap ${r.time_gap_sec}s, sim ${r.sim_threshold}, ${r.elapsed_sec}s)`;
       }
-      $("#ingest-status").textContent = msg;
+      status.textContent = msg;
       refreshGrid();
     } catch (e) {
-      $("#ingest-status").textContent = "Burst find failed: " + e.message;
+      status.textContent = "Burst find failed: " + e.message;
+      status.className = "bulk-info bulk-blocked";
     }
   };
 
