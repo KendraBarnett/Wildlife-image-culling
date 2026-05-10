@@ -155,21 +155,71 @@ async function workerAction(path) {
 
 async function refreshFolders() {
   const folders = await jget("/api/folders");
+  state.folders = folders;
   const bar = $("#folders-bar");
   bar.innerHTML = "";
+
+  // 'All' pseudo-tab — aggregates every folder. Active when state.folder
+  // is null. Clicking it clears the focus on the backend so the worker
+  // round-robins across unpaused folders.
+  const allBtn = document.createElement("button");
+  allBtn.className = "folder-chip" + (state.folder === null ? " active" : "");
+  const totalCount = folders.reduce((s, f) => s + (f.n || 0), 0);
+  allBtn.textContent = `All (${totalCount})`;
+  allBtn.title = "All folders combined";
+  allBtn.onclick = () => selectFolder(null);
+  bar.appendChild(allBtn);
+
   for (const f of folders) {
+    const wrap = document.createElement("span");
+    wrap.className = "folder-chip-wrap";
     const b = document.createElement("button");
-    b.className = "folder-chip" + (state.folder === f.folder ? " active" : "");
+    const classes = ["folder-chip"];
+    if (state.folder === f.folder) classes.push("active");
+    if (f.paused) classes.push("paused");
+    if (!f.last_online) classes.push("offline");
+    b.className = classes.join(" ");
     const short = f.folder.split("/").slice(-2).join("/");
-    b.textContent = `${short} (${f.n})`;
-    b.title = f.folder;
+    const suffix = (!f.last_online ? " (offline)" : "") + (f.paused ? " ⏸" : "");
+    b.textContent = `${short} (${f.n})${suffix}`;
+    b.title = f.folder + (!f.last_online ? " — drive not currently reachable" : "");
     b.onclick = () => selectFolder(f.folder);
-    bar.appendChild(b);
+    wrap.appendChild(b);
+
+    // Per-folder pause toggle. Clicking flips the folder's state on
+    // the backend; the worker picks it up on its next tick.
+    const pauseBtn = document.createElement("button");
+    pauseBtn.className = "folder-pause";
+    pauseBtn.textContent = f.paused ? "▶" : "⏸";
+    pauseBtn.title = f.paused ? "Resume analysis on this folder" : "Pause analysis on this folder";
+    pauseBtn.onclick = async (e) => {
+      e.stopPropagation();
+      try {
+        await jpost("/api/folders/pause", { folder: f.folder, paused: !f.paused });
+      } catch (err) {
+        alert("Could not toggle: " + err.message);
+        return;
+      }
+      refreshFolders();
+      refreshHealth();
+    };
+    wrap.appendChild(pauseBtn);
+
+    bar.appendChild(wrap);
   }
+
+  // Tell the backend which folder the user is looking at so the worker
+  // prioritizes it. Null = 'All' tab → no preference.
+  try {
+    await jpost("/api/folders/focus", { folder: state.folder });
+  } catch (e) { /* non-fatal */ }
 }
 
 async function refreshStats() {
-  const s = await jget("/api/stats");
+  const url = state.folder
+    ? `/api/stats?folder=${encodeURIComponent(state.folder)}`
+    : "/api/stats";
+  const s = await jget(url);
   const parts = [
     `${s.total || 0} total`,
     `${s.analyzed || 0} fully analyzed`,
@@ -177,14 +227,17 @@ async function refreshStats() {
   if (s.partial) parts.push(`${s.partial} partial`);
   parts.push(`${(s.pending || 0) - (s.partial || 0)} pending`);
   if (s.errored) parts.push(`${s.errored} errored`);
+  if (s.unreachable) parts.push(`${s.unreachable} unreachable`);
   parts.push(`${s.rated || 0} rated`);
-  $("#stats").textContent = parts.join(" · ");
+  const prefix = state.folder ? "" : "All folders · ";
+  $("#stats").textContent = prefix + parts.join(" · ");
 }
 
 async function selectFolder(folder) {
   state.folder = folder;
   await refreshFolders();
   await refreshGrid();
+  await refreshStats();
 }
 
 async function refreshAiVocab() {
@@ -827,6 +880,23 @@ document.addEventListener("DOMContentLoaded", () => {
     e.target.classList.toggle("active");
   };
   $("#bulk-tag-apply").onclick = applyBulkTags;
+  $("#recheck-folders").onclick = async () => {
+    try {
+      const r = await jpost("/api/folders/recheck");
+      const back = (r.online_again || []).length;
+      const gone = (r.now_offline || []).length;
+      let msg = "Folder probe complete.";
+      if (back) msg += ` ${back} now online (unreachable images requeued).`;
+      if (gone) msg += ` ${gone} just went offline.`;
+      if (!back && !gone) msg += " No state changes.";
+      alert(msg);
+      refreshFolders();
+      refreshStats();
+      refreshGrid();
+    } catch (e) {
+      alert("Recheck failed: " + e.message);
+    }
+  };
   $("#backfill-capture-times").onclick = async () => {
     if (!confirm(
       "Read EXIF DateTimeOriginal for every image that doesn't have a "

@@ -31,6 +31,13 @@ header h1 { font-size: 16px; margin: 0; font-weight: 600; }
 .folder-chip { padding: 4px 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; cursor: pointer; font-size: 12px; color: var(--muted); }
 .folder-chip.active { background: var(--accent); color: #00203a; border-color: var(--accent); }
 .folder-chip:hover { color: var(--fg); }
+.folder-chip.paused { opacity: 0.7; border-style: dashed; }
+.folder-chip.offline { opacity: 0.55; border-color: rgba(255, 100, 100, 0.5); color: #ff8a8a; }
+.folder-chip.offline.active { background: rgba(255, 100, 100, 0.18); color: #ff8a8a; border-color: rgba(255, 100, 100, 0.5); }
+.folder-chip-wrap { display: inline-flex; align-items: center; gap: 0; }
+.folder-chip-wrap .folder-chip { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: none; }
+.folder-pause { padding: 4px 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 0 999px 999px 0; cursor: pointer; font-size: 11px; color: var(--muted); }
+.folder-pause:hover { color: var(--fg); }
 
 #filter-bar { display: flex; gap: 8px; align-items: center; padding: 8px 20px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted); flex-wrap: wrap; }
 #filter-bar select { background: var(--panel); border: 1px solid var(--border); color: var(--fg); padding: 4px 8px; border-radius: 4px; }
