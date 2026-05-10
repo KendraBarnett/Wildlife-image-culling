@@ -25,6 +25,15 @@ class BackgroundWorker:
         self._thread = threading.Thread(target=self._run, name="wc-worker", daemon=True)
         self._thread.start()
         _log("background worker started")
+        threading.Thread(target=self._warmup, name="wc-warmup", daemon=True).start()
+
+    def _warmup(self) -> None:
+        _log("warming up vision model (this may take a minute on first run)...")
+        err = ai.warmup_vision_model()
+        if err:
+            _log(f"warmup: {err}")
+        else:
+            _log("warmup: vision model loaded and kept warm")
 
     def stop(self) -> None:
         self._stop.set()

@@ -41,15 +41,25 @@
   <section id="folders-bar"></section>
 
   <section id="filter-bar">
-    <label>Filter:</label>
+    <label>Rating:</label>
     <select id="filter-rating">
-      <option value="">all ratings</option>
+      <option value="">all</option>
       <option value="0">unrated</option>
       <option value="1">1+ stars</option>
       <option value="3">3+ stars</option>
       <option value="4">4+ stars</option>
       <option value="5">5 stars only</option>
     </select>
+
+    <label>AI status:</label>
+    <select id="filter-ai-status">
+      <option value="">all</option>
+      <option value="done">done</option>
+      <option value="pending">pending</option>
+      <option value="error">errored</option>
+      <option value="cancelled">cancelled</option>
+    </select>
+
     <span id="stats" class="stats"></span>
     <span class="worker-controls">
       <span id="worker-state" class="worker-pill">analysis: running</span>
@@ -57,6 +67,41 @@
       <button id="worker-resume" class="secondary hidden" title="Resume AI analysis">Resume</button>
       <button id="worker-cancel" class="danger" title="Cancel all pending analysis">Stop &amp; clear queue</button>
     </span>
+  </section>
+
+  <section id="ai-filter-bar">
+    <label>Eye focus:</label>
+    <select id="filter-eye-focus" data-vocab="eye_focus"><option value="">any</option></select>
+    <label>Motion:</label>
+    <select id="filter-motion" data-vocab="motion"><option value="">any</option></select>
+    <label>Composition:</label>
+    <select id="filter-composition" data-vocab="composition"><option value="">any</option></select>
+    <label>Lighting:</label>
+    <select id="filter-lighting" data-vocab="lighting"><option value="">any</option></select>
+    <label>Silhouette:</label>
+    <select id="filter-silhouette">
+      <option value="">any</option>
+      <option value="yes">yes</option>
+      <option value="no">no</option>
+    </select>
+    <label>Issue:</label>
+    <select id="filter-issue" data-vocab="technical_issues"><option value="">any</option></select>
+    <label>Subject contains:</label>
+    <input id="filter-subject" type="text" placeholder="owl, gorilla…" />
+    <label>Artistic ≥</label>
+    <input id="filter-min-artistic" type="number" min="1" max="10" step="1" />
+    <label>Portfolio ≥</label>
+    <input id="filter-min-portfolio" type="number" min="1" max="10" step="1" />
+    <button id="filter-clear" class="secondary">Clear</button>
+  </section>
+
+  <section id="bulk-bar">
+    <button id="select-toggle" class="secondary">Select…</button>
+    <span id="select-info" class="bulk-info hidden"></span>
+    <button id="select-all-visible" class="secondary hidden">Select all visible</button>
+    <button id="select-clear" class="secondary hidden">Clear selection</button>
+    <button id="reanalyze-selected" class="hidden">Re-analyze selected</button>
+    <button id="reanalyze-errored" class="secondary">Re-analyze all errored</button>
   </section>
 
   <main id="grid"></main>
@@ -68,6 +113,7 @@
       <aside class="modal-side">
         <h2 id="modal-filename"></h2>
         <div id="modal-ai" class="ai-block"></div>
+        <button id="modal-reanalyze" class="secondary modal-reanalyze">Re-analyze this image</button>
         <div class="rating">
           <label>Your rating</label>
           <div id="stars" class="stars" data-rating="0">

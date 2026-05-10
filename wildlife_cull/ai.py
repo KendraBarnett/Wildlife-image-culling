@@ -1,4 +1,5 @@
 import base64
+import io
 import json
 import time
 from pathlib import Path
@@ -9,15 +10,21 @@ import numpy as np
 
 from .config import OLLAMA_HOST, VISION_MODEL, CLIP_MODEL
 
+# Bigger inputs make the vision encoder slower without meaningfully
+# improving culling judgment. On a 16 GB M-series Mac mini, sending the
+# full 1600 px preview can push time-to-first-token past the read timeout.
+AI_IMAGE_MAX_SIZE = 1024
+
 VISION_PROMPT = """You are evaluating a single wildlife photograph for culling. \
-Reply with ONLY a JSON object, no prose, no markdown fences. Use this schema:
+Reply with ONLY a JSON object, no prose, no markdown fences. Use this schema \
+and pick values STRICTLY from the listed options for every enum field:
 
 {
   "subject": "<short phrase, e.g. 'great horned owl perched on branch'>",
   "eye_focus": "sharp" | "soft" | "not_visible" | "n/a",
   "motion": "still" | "subtle" | "in_motion" | "blurred",
   "composition": "strong" | "okay" | "weak",
-  "lighting": "<short phrase>",
+  "lighting": "harsh" | "soft" | "golden" | "low_light" | "backlit" | "overcast" | "mixed",
   "is_silhouette": true | false,
   "technical_issues": [<zero or more of: "out_of_focus","camera_shake","clipped_subject","blown_highlights","heavy_noise","obstructed">],
   "artistic_score": <integer 1-10>,
@@ -25,16 +32,39 @@ Reply with ONLY a JSON object, no prose, no markdown fences. Use this schema:
   "notes": "<one short sentence, optional>"
 }
 
-Score conservatively. Most frames in a burst will be average (4-6). Reserve 9-10 \
-for genuinely exceptional work. A deliberate silhouette can still score high if \
-the subject shape is clean and the composition is strong."""
+Important rules:
+- Pick exactly one value for each enum (eye_focus, motion, composition, lighting). Do not invent new values.
+- "low_light" goes in `lighting`, never in `technical_issues`.
+- `technical_issues` is for image flaws, not artistic choices. A deliberate silhouette is not an "obstructed" or "out_of_focus" image.
+- Score conservatively. Most frames in a burst will be average (4-6). Reserve 9-10 for genuinely exceptional work."""
+
+
+# Single source of truth for the controlled vocab. The server exposes this
+# to the UI so dropdowns show exactly the values the model can return.
+AI_VOCAB = {
+    "eye_focus": ["sharp", "soft", "not_visible", "n/a"],
+    "motion": ["still", "subtle", "in_motion", "blurred"],
+    "composition": ["strong", "okay", "weak"],
+    "lighting": ["harsh", "soft", "golden", "low_light", "backlit", "overcast", "mixed"],
+    "technical_issues": [
+        "out_of_focus", "camera_shake", "clipped_subject",
+        "blown_highlights", "heavy_noise", "obstructed",
+    ],
+}
 
 
 def _read_b64(path: Path) -> str:
-    return base64.b64encode(path.read_bytes()).decode("ascii")
+    from PIL import Image
+    with Image.open(path) as im:
+        im = im.convert("RGB")
+        if max(im.size) > AI_IMAGE_MAX_SIZE:
+            im.thumbnail((AI_IMAGE_MAX_SIZE, AI_IMAGE_MAX_SIZE), Image.LANCZOS)
+        buf = io.BytesIO()
+        im.save(buf, "JPEG", quality=85)
+    return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
-def analyze_image(preview_path: Path, idle_timeout: float = 120.0, total_timeout: float = 600.0) -> tuple[dict, str]:
+def analyze_image(preview_path: Path, idle_timeout: float = 300.0, total_timeout: float = 900.0) -> tuple[dict, str]:
     if not preview_path.exists():
         raise FileNotFoundError(f"Preview missing: {preview_path}")
     payload = {
@@ -121,6 +151,19 @@ def embed_image(preview_path: Path) -> np.ndarray:
 
 def vec_to_bytes(v: np.ndarray) -> bytes:
     return v.astype(np.float32).tobytes()
+
+
+def warmup_vision_model(timeout: float = 600.0) -> Optional[str]:
+    """Force Ollama to load the vision model so the first real call is fast."""
+    payload = {"model": VISION_MODEL, "keep_alive": "30m"}
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            r = client.post(f"{OLLAMA_HOST}/api/generate", json=payload)
+            if r.status_code != 200:
+                return f"warmup HTTP {r.status_code}: {r.text[:200]}"
+        return None
+    except Exception as exc:
+        return f"warmup failed: {exc}"
 
 
 def ollama_health() -> Optional[str]:

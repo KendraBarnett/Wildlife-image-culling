@@ -134,12 +134,27 @@ def api_folder(folder: str) -> dict:
     return {"folder": folder, "summary": summary}
 
 
+@app.get("/api/ai-vocab")
+def api_ai_vocab() -> dict:
+    return ai.AI_VOCAB
+
+
 @app.get("/api/images")
 def api_images(
     folder: Optional[str] = None,
     rating_min: Optional[int] = None,
     rating_max: Optional[int] = None,
     only_rated: bool = False,
+    ai_status: Optional[str] = None,
+    eye_focus: Optional[str] = None,
+    motion: Optional[str] = None,
+    composition: Optional[str] = None,
+    lighting: Optional[str] = None,
+    silhouette: Optional[str] = None,
+    subject_contains: Optional[str] = None,
+    has_issue: Optional[str] = None,
+    min_artistic: Optional[int] = None,
+    min_portfolio: Optional[int] = None,
     limit: int = Query(default=500, le=2000),
     offset: int = 0,
 ) -> dict:
@@ -156,11 +171,42 @@ def api_images(
         params.append(rating_max)
     if only_rated:
         where.append("user_rating IS NOT NULL")
+    if ai_status:
+        where.append("ai_status=?")
+        params.append(ai_status)
+    if eye_focus:
+        where.append("ai_eye_focus=?")
+        params.append(eye_focus)
+    if motion:
+        where.append("ai_motion=?")
+        params.append(motion)
+    if composition:
+        where.append("ai_composition=?")
+        params.append(composition)
+    if lighting:
+        where.append("ai_lighting=?")
+        params.append(lighting)
+    if silhouette in ("yes", "no"):
+        where.append("ai_is_silhouette=?")
+        params.append(1 if silhouette == "yes" else 0)
+    if subject_contains:
+        where.append("ai_subject LIKE ?")
+        params.append(f"%{subject_contains}%")
+    if has_issue:
+        where.append("ai_technical_issues LIKE ?")
+        params.append(f"%\"{has_issue}\"%")
+    if min_artistic is not None:
+        where.append("ai_artistic_score >= ?")
+        params.append(min_artistic)
+    if min_portfolio is not None:
+        where.append("ai_portfolio_score >= ?")
+        params.append(min_portfolio)
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
     sql = (
         "SELECT id, filename, folder, is_raw, width, height, "
         "ai_status, ai_artistic_score, ai_portfolio_score, "
-        "ai_eye_focus, ai_motion, ai_is_silhouette, ai_subject, "
+        "ai_eye_focus, ai_motion, ai_composition, ai_lighting, "
+        "ai_is_silhouette, ai_subject, ai_technical_issues, "
         "user_rating, user_tags, user_notes "
         f"FROM images {where_sql} ORDER BY filename LIMIT ? OFFSET ?"
     )
@@ -177,8 +223,44 @@ def api_images(
                 d["user_tags"] = []
         else:
             d["user_tags"] = []
+        if d.get("ai_technical_issues"):
+            try:
+                d["ai_technical_issues"] = json.loads(d["ai_technical_issues"])
+            except Exception:
+                d["ai_technical_issues"] = []
+        else:
+            d["ai_technical_issues"] = []
         items.append(d)
     return {"images": items, "count": len(items)}
+
+
+class ReanalyzeReq(BaseModel):
+    ids: Optional[list[int]] = None
+    status: Optional[str] = None
+    folder: Optional[str] = None
+
+
+@app.post("/api/image/{image_id}/reanalyze")
+def api_reanalyze_one(image_id: int) -> dict:
+    with db.connect() as conn:
+        row = conn.execute("SELECT id FROM images WHERE id=?", (image_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="not found")
+        n = db.reset_ai_for_reanalysis(conn, [image_id])
+    return {"reset": n}
+
+
+@app.post("/api/reanalyze")
+def api_reanalyze_bulk(req: ReanalyzeReq) -> dict:
+    with db.connect() as conn:
+        ids = list(req.ids or [])
+        if req.status:
+            ids.extend(db.select_image_ids_by_status(conn, req.status, req.folder))
+        ids = list(dict.fromkeys(ids))  # dedupe, preserve order
+        if not ids:
+            return {"reset": 0}
+        n = db.reset_ai_for_reanalysis(conn, ids)
+    return {"reset": n}
 
 
 @app.get("/api/image/{image_id}")

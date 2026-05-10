@@ -5,6 +5,9 @@ const state = {
   current: null,
   saveTimer: null,
   browse: { path: "", parent: null, dirs: [], isRoot: true },
+  aiVocab: null,
+  selectMode: false,
+  selected: new Set(),
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -87,19 +90,66 @@ async function selectFolder(folder) {
   await refreshGrid();
 }
 
-async function refreshGrid() {
-  const params = new URLSearchParams();
-  if (state.folder) params.set("folder", state.folder);
+async function refreshAiVocab() {
+  if (state.aiVocab) return;
+  try {
+    state.aiVocab = await jget("/api/ai-vocab");
+  } catch (e) {
+    state.aiVocab = {};
+    return;
+  }
+  for (const sel of document.querySelectorAll("select[data-vocab]")) {
+    const key = sel.dataset.vocab;
+    const values = state.aiVocab[key] || [];
+    for (const v of values) {
+      const opt = document.createElement("option");
+      opt.value = v;
+      opt.textContent = v;
+      sel.appendChild(opt);
+    }
+  }
+}
+
+function readFilters() {
+  const p = new URLSearchParams();
+  if (state.folder) p.set("folder", state.folder);
   const fr = state.filterRating;
   if (fr === "0") {
-    params.set("rating_max", "0");
+    p.set("rating_max", "0");
   } else if (fr) {
-    params.set("rating_min", fr);
-    if (fr === "5") params.set("rating_max", "5");
+    p.set("rating_min", fr);
+    if (fr === "5") p.set("rating_max", "5");
   }
+  const map = {
+    "filter-ai-status": "ai_status",
+    "filter-eye-focus": "eye_focus",
+    "filter-motion": "motion",
+    "filter-composition": "composition",
+    "filter-lighting": "lighting",
+    "filter-silhouette": "silhouette",
+    "filter-issue": "has_issue",
+    "filter-subject": "subject_contains",
+    "filter-min-artistic": "min_artistic",
+    "filter-min-portfolio": "min_portfolio",
+  };
+  for (const [id, name] of Object.entries(map)) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    const v = el.value.trim();
+    if (v) p.set(name, v);
+  }
+  return p;
+}
+
+async function refreshGrid() {
+  const params = readFilters();
   const data = await jget(`/api/images?${params}`);
   state.images = data.images;
+  for (const id of [...state.selected]) {
+    if (!state.images.find((x) => x.id === id)) state.selected.delete(id);
+  }
   renderGrid();
+  updateSelectInfo();
 }
 
 function renderGrid() {
@@ -114,6 +164,9 @@ function renderCard(img) {
   const card = document.createElement("div");
   card.className = "card";
   for (const t of img.user_tags || []) card.classList.add(`tag-${t}`);
+  if (img.ai_status === "error") card.classList.add("ai-status-error");
+  if (img.ai_status === "cancelled") card.classList.add("ai-status-cancelled");
+  if (state.selected.has(img.id)) card.classList.add("selected");
 
   const im = document.createElement("img");
   im.loading = "lazy";
@@ -146,11 +199,22 @@ function renderCard(img) {
     scores.textContent = "analyzing…";
   } else if (img.ai_status === "error") {
     scores.textContent = "ai error";
+  } else if (img.ai_status === "cancelled") {
+    scores.textContent = "cancelled";
   }
   overlay.appendChild(scores);
   card.appendChild(overlay);
 
-  card.onclick = () => openModal(img.id);
+  card.onclick = () => {
+    if (state.selectMode) {
+      if (state.selected.has(img.id)) state.selected.delete(img.id);
+      else state.selected.add(img.id);
+      card.classList.toggle("selected");
+      updateSelectInfo();
+    } else {
+      openModal(img.id);
+    }
+  };
   return card;
 }
 
@@ -318,6 +382,51 @@ function closeBrowser() {
   $("#browse-modal").classList.add("hidden");
 }
 
+function setSelectMode(on) {
+  state.selectMode = on;
+  if (!on) state.selected.clear();
+  $("#select-toggle").textContent = on ? "Exit select mode" : "Select…";
+  $("#select-toggle").classList.toggle("danger", on);
+  document.body.classList.toggle("select-mode", on);
+  for (const cls of ["select-info", "select-all-visible", "select-clear", "reanalyze-selected"]) {
+    $("#" + cls).classList.toggle("hidden", !on);
+  }
+  renderGrid();
+  updateSelectInfo();
+}
+
+function updateSelectInfo() {
+  const n = state.selected.size;
+  $("#select-info").textContent = `${n} selected`;
+  $("#reanalyze-selected").disabled = n === 0;
+}
+
+async function reanalyzeIds(ids) {
+  if (!ids.length) return;
+  try {
+    await jpost("/api/reanalyze", { ids });
+    state.selected.clear();
+    setSelectMode(false);
+    refreshStats();
+    refreshGrid();
+  } catch (e) {
+    alert("Re-analyze failed: " + e.message);
+  }
+}
+
+async function reanalyzeByStatus(status) {
+  try {
+    const body = { status };
+    if (state.folder) body.folder = state.folder;
+    const r = await jpost("/api/reanalyze", body);
+    $("#ingest-status").textContent = `requeued ${r.reset} for analysis`;
+    refreshStats();
+    refreshGrid();
+  } catch (e) {
+    alert("Re-analyze failed: " + e.message);
+  }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   $("#ingest-btn").onclick = async () => {
     const folder = $("#folder-input").value.trim();
@@ -336,6 +445,69 @@ document.addEventListener("DOMContentLoaded", () => {
 
   $("#filter-rating").onchange = (e) => {
     state.filterRating = e.target.value;
+    refreshGrid();
+  };
+
+  for (const id of [
+    "filter-ai-status", "filter-eye-focus", "filter-motion", "filter-composition",
+    "filter-lighting", "filter-silhouette", "filter-issue",
+  ]) {
+    $("#" + id).onchange = refreshGrid;
+  }
+  for (const id of ["filter-subject", "filter-min-artistic", "filter-min-portfolio"]) {
+    let t;
+    $("#" + id).oninput = () => {
+      clearTimeout(t);
+      t = setTimeout(refreshGrid, 250);
+    };
+  }
+  $("#filter-clear").onclick = () => {
+    state.filterRating = "";
+    $("#filter-rating").value = "";
+    for (const id of [
+      "filter-ai-status", "filter-eye-focus", "filter-motion", "filter-composition",
+      "filter-lighting", "filter-silhouette", "filter-issue",
+      "filter-subject", "filter-min-artistic", "filter-min-portfolio",
+    ]) {
+      $("#" + id).value = "";
+    }
+    refreshGrid();
+  };
+
+  $("#select-toggle").onclick = () => setSelectMode(!state.selectMode);
+  $("#select-clear").onclick = () => {
+    state.selected.clear();
+    renderGrid();
+    updateSelectInfo();
+  };
+  $("#select-all-visible").onclick = () => {
+    for (const img of state.images) state.selected.add(img.id);
+    renderGrid();
+    updateSelectInfo();
+  };
+  $("#reanalyze-selected").onclick = () => {
+    const ids = [...state.selected];
+    if (!ids.length) return;
+    if (!confirm(`Re-analyze ${ids.length} image(s)? They will go back into the analysis queue.`)) return;
+    reanalyzeIds(ids);
+  };
+  $("#reanalyze-errored").onclick = () => {
+    const scope = state.folder ? "in this folder" : "across all folders";
+    if (!confirm(`Re-analyze every errored image ${scope}?`)) return;
+    reanalyzeByStatus("error");
+  };
+
+  $("#modal-reanalyze").onclick = async () => {
+    if (!state.current) return;
+    const id = state.current.id;
+    try {
+      await jpost(`/api/image/${id}/reanalyze`);
+    } catch (e) {
+      alert("Re-analyze failed: " + e.message);
+      return;
+    }
+    closeModal();
+    refreshStats();
     refreshGrid();
   };
 
@@ -407,6 +579,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  refreshAiVocab();
   refreshHealth();
   refreshFolders();
   refreshStats();

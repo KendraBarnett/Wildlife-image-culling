@@ -27,8 +27,11 @@ CREATE TABLE IF NOT EXISTS images (
     ai_portfolio_score INTEGER,
     ai_eye_focus TEXT,
     ai_motion TEXT,
+    ai_composition TEXT,
+    ai_lighting TEXT,
     ai_is_silhouette INTEGER,
     ai_subject TEXT,
+    ai_technical_issues TEXT,
     ai_analyzed_at REAL,
 
     embedding BLOB,
@@ -56,6 +59,18 @@ CREATE TABLE IF NOT EXISTS folders (
 def init_db() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
+        _migrate(conn)
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(images)").fetchall()}
+    for name, ddl in [
+        ("ai_composition", "ALTER TABLE images ADD COLUMN ai_composition TEXT"),
+        ("ai_lighting", "ALTER TABLE images ADD COLUMN ai_lighting TEXT"),
+        ("ai_technical_issues", "ALTER TABLE images ADD COLUMN ai_technical_issues TEXT"),
+    ]:
+        if name not in cols:
+            conn.execute(ddl)
 
 
 @contextmanager
@@ -88,6 +103,9 @@ def upsert_image(conn: sqlite3.Connection, row: dict) -> int:
 
 
 def set_ai_result(conn: sqlite3.Connection, image_id: int, ai: dict, raw_json: str, ts: float) -> None:
+    issues = ai.get("technical_issues") or []
+    if not isinstance(issues, list):
+        issues = []
     conn.execute(
         """UPDATE images SET
             ai_status='done',
@@ -96,8 +114,11 @@ def set_ai_result(conn: sqlite3.Connection, image_id: int, ai: dict, raw_json: s
             ai_portfolio_score=?,
             ai_eye_focus=?,
             ai_motion=?,
+            ai_composition=?,
+            ai_lighting=?,
             ai_is_silhouette=?,
             ai_subject=?,
+            ai_technical_issues=?,
             ai_analyzed_at=?
         WHERE id=?""",
         (
@@ -106,12 +127,52 @@ def set_ai_result(conn: sqlite3.Connection, image_id: int, ai: dict, raw_json: s
             ai.get("portfolio_potential"),
             ai.get("eye_focus"),
             ai.get("motion"),
+            ai.get("composition"),
+            ai.get("lighting"),
             1 if ai.get("is_silhouette") else 0,
             ai.get("subject"),
+            json.dumps(issues),
             ts,
             image_id,
         ),
     )
+
+
+def reset_ai_for_reanalysis(conn: sqlite3.Connection, image_ids: list[int]) -> int:
+    if not image_ids:
+        return 0
+    placeholders = ",".join("?" for _ in image_ids)
+    cur = conn.execute(
+        f"""UPDATE images SET
+            ai_status='pending',
+            ai_json=NULL,
+            ai_artistic_score=NULL,
+            ai_portfolio_score=NULL,
+            ai_eye_focus=NULL,
+            ai_motion=NULL,
+            ai_composition=NULL,
+            ai_lighting=NULL,
+            ai_is_silhouette=NULL,
+            ai_subject=NULL,
+            ai_technical_issues=NULL,
+            ai_analyzed_at=NULL
+        WHERE id IN ({placeholders})""",
+        image_ids,
+    )
+    return cur.rowcount
+
+
+def select_image_ids_by_status(
+    conn: sqlite3.Connection,
+    status: str,
+    folder: Optional[str] = None,
+) -> list[int]:
+    sql = "SELECT id FROM images WHERE ai_status=?"
+    params: list = [status]
+    if folder:
+        sql += " AND folder=?"
+        params.append(folder)
+    return [r["id"] for r in conn.execute(sql, params).fetchall()]
 
 
 def set_ai_error(conn: sqlite3.Connection, image_id: int, message: str) -> None:
