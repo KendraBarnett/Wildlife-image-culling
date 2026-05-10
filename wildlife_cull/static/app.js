@@ -771,7 +771,16 @@ document.addEventListener("DOMContentLoaded", () => {
     $("#ingest-status").textContent = "Finding bursts…";
     try {
       const r = await jpost("/api/bursts/recompute", { folder: state.folder });
-      $("#ingest-status").textContent = `${r.bursts} burst(s) · ${r.images_in_bursts} frames in bursts (${r.elapsed_sec}s)`;
+      let msg = `${r.bursts} burst(s) · ${r.images_in_bursts} frames`;
+      if (r.bursts === 0 && r.reason) {
+        msg = `0 bursts. ${r.reason}`;
+        if (r.with_capture_time === 0 && r.total_in_folder > 0) {
+          msg += " Try the 'Backfill capture times' button below.";
+        }
+      } else {
+        msg += ` · ${r.with_embedding}/${r.total_in_folder} embedded · ${r.with_capture_time} have EXIF time (${r.elapsed_sec}s)`;
+      }
+      $("#ingest-status").textContent = msg;
       refreshGrid();
     } catch (e) {
       $("#ingest-status").textContent = "Burst find failed: " + e.message;
@@ -818,6 +827,28 @@ document.addEventListener("DOMContentLoaded", () => {
     e.target.classList.toggle("active");
   };
   $("#bulk-tag-apply").onclick = applyBulkTags;
+  $("#backfill-capture-times").onclick = async () => {
+    if (!confirm(
+      "Read EXIF DateTimeOriginal for every image that doesn't have a "
+      + "capture time yet?\n\n"
+      + "Burst detection uses real capture times when available — file "
+      + "modification times are often wrong on copied archives. Slow on "
+      + "first run (one exiftool call per image) but only has to happen once."
+    )) return;
+    const btn = $("#backfill-capture-times");
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = "Reading EXIF…";
+    try {
+      const r = await jpost("/api/admin/backfill-capture-times");
+      alert(`Scanned ${r.scanned} images, updated ${r.updated}, ${r.skipped} had no EXIF (${r.elapsed_sec}s).`);
+    } catch (e) {
+      alert("Backfill failed: " + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
+  };
   $("#refresh-sidecars").onclick = async () => {
     if (!confirm(
       "Rewrite every image's XMP sidecar from current AI / Claude state?\n\n"

@@ -289,6 +289,14 @@ def api_bursts_recompute(req: BurstReq) -> dict:
     return bursts.recompute_bursts_for_folder(req.folder)
 
 
+@app.post("/api/admin/backfill-capture-times")
+def api_backfill_capture_times() -> dict:
+    """Pull EXIF DateTimeOriginal for every image that doesn't have a
+    capture_time yet. One-shot — burst detection works much better with
+    real capture times than with file mtimes."""
+    return bursts.backfill_capture_times()
+
+
 @app.get("/api/bursts")
 def api_bursts(folder: str) -> dict:
     return {"bursts": bursts.list_bursts(folder)}

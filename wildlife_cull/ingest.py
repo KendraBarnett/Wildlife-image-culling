@@ -1,6 +1,7 @@
 import hashlib
 import subprocess
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Iterator, Optional
 
@@ -8,6 +9,28 @@ from PIL import Image, ImageOps
 
 from . import db, focus
 from .config import IMAGE_EXTS, RAW_EXTS, PREVIEW_DIR, PREVIEW_MAX_SIZE, THUMB_MAX_SIZE
+
+
+def extract_capture_time(src: Path) -> Optional[float]:
+    """Pull EXIF DateTimeOriginal via exiftool and return it as a Unix
+    timestamp. Falls back to None when exiftool isn't installed, the
+    file lacks EXIF, or the date is malformed. Burst detection needs
+    real capture time — file mtime is often wrong on copied archives."""
+    try:
+        result = subprocess.run(
+            ["exiftool", "-s3", "-DateTimeOriginal", "-d", "%Y-%m-%d %H:%M:%S", str(src)],
+            capture_output=True,
+            check=False,
+            timeout=5,
+            text=True,
+        )
+        out = (result.stdout or "").strip()
+        if not out:
+            return None
+        dt = datetime.strptime(out, "%Y-%m-%d %H:%M:%S")
+        return dt.timestamp()
+    except (subprocess.TimeoutExpired, FileNotFoundError, ValueError, OSError):
+        return None
 
 
 def iter_images(folder: Path, recursive: bool = True) -> Iterator[Path]:
@@ -133,6 +156,7 @@ def ingest_folder(folder: str, recursive: bool = True) -> dict:
             existing_rating = _read_existing_xmp_rating(img_path)
             f_score = focus.focus_score(preview)
             f_label = focus.focus_label(f_score)
+            cap = extract_capture_time(img_path)
 
             row = {
                 "path": str(img_path),
@@ -140,6 +164,7 @@ def ingest_folder(folder: str, recursive: bool = True) -> dict:
                 "folder": str(img_path.parent),
                 "file_size": stat.st_size,
                 "mtime": stat.st_mtime,
+                "capture_time": cap,
                 "is_raw": 1 if img_path.suffix.lower() in RAW_EXTS else 0,
                 "preview_path": str(preview),
                 "thumb_path": str(thumb),
