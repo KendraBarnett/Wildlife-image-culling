@@ -29,9 +29,9 @@ pick values STRICTLY from the listed options for every enum field:
   "composition": <PICK EXACTLY ONE: "strong" | "standard" | "weak">,
   "lighting": <PICK EXACTLY ONE: "harsh" | "soft" | "golden" | "low_light" | "backlit" | "overcast" | "mixed">,
   "is_silhouette": true | false,
-  "technical_issues": [<zero or more, each ONE OF: "out_of_focus","camera_shake","clipped_subject","blown_highlights","heavy_noise","obstructed">],
+  "technical_issues": [<zero or more, each ONE OF: "out_of_focus","soft_edges","camera_shake","clipped_subject","blown_highlights","underexposed","harsh_backlight","heavy_noise","obstructed","cluttered_background","subject_too_small">],
   "keep": <PICK EXACTLY ONE: "yes" | "no">,
-  "notes": "<2-3 sentences. First sentence: what the image actually shows (subject, light, composition, behavior). Second sentence: technical and compositional state — what works, what doesn't. Third sentence: WHY keep or don't keep. Be SPECIFIC and CONCRETE. NEVER write empty contradictions like 'good, but blurry' — name strengths and flaws separately and tie each to what you can see.>"
+  "notes": "<2-3 sentences. First: what the image actually shows (subject, light, composition, behavior). Second: technical and compositional state — name BOTH what works AND every flaw you can see, in plain language tied to specific parts of the frame ('body in shadow from the chest down', 'soft on the eye but beak is sharp', 'twig crossing the wing'). Third: WHY keep or don't keep, referencing what you just named. NEVER be a cheerleader — a keeper can have flaws and those flaws still need to be named. Don't write 'captures a clear and engaging moment' on a backlit-shadow shot. Don't write 'sharp details' if the sharpness is on the beak but the eye is in shadow. If technical_issues is empty, the notes should justify that — 'no visible technical issues; clean across the board'.>"
 }
 
 Schema rules:
@@ -40,27 +40,52 @@ Schema rules:
 - "low_light" goes in `lighting`, never in `technical_issues`.
 - `technical_issues` is for image flaws, not artistic choices.
 
-DO NOT INVENT FLAWS. The single biggest failure mode is hallucinating problems that aren't visible. Apply these rules:
-- `technical_issues` must be CONSERVATIVE. Only flag a problem you can clearly see at this resolution. When in doubt, leave the array EMPTY. An empty array is the correct answer for most images.
-- For every entry you put in `technical_issues`, your notes MUST describe the specific area of the frame where it appears. If you cannot describe where, do not list the issue.
-- Do not flag "out_of_focus" because the background is blurred — background blur is normal bokeh, not a flaw. Out-of-focus is only a flaw if it affects the SUBJECT.
-- Do not flag "blown_highlights" unless you can actually see white pixels with no detail in the subject area.
+TECHNICAL ISSUES — DEFINITIONS, AND FLAG EVERYTHING YOU CAN SEE.
+A keeper can and SHOULD have issues listed. Issues are observations, not the cull decision. The photographer wants to know what's wrong with each frame even when they decide to keep it — that's how they choose between similar shots and how they decide whether the image needs editing. Be HONEST about flaws regardless of the keep verdict.
+
+Definitions — what each value means:
+- `out_of_focus` — the SUBJECT is clearly out of focus. Background blur (bokeh) is NOT this. Only count it if the subject itself is soft enough to render the image unusable.
+- `soft_edges` — slightly soft but not full out_of_focus. Subject is recognizable but details are mushy (slight motion, slight focus miss, atmospheric haze). Common on long-lens wildlife.
+- `camera_shake` — handheld at too low a shutter speed; whole frame has motion smear including the background.
+- `clipped_subject` — the subject is cut off at the frame edge in a way that damages the image (wingtip, tail, foot amputated).
+- `blown_highlights` — pure white pixels with no recoverable detail on the SUBJECT. Sky blown is not an issue; subject feathers blown is.
+- `underexposed` — the subject's body is so dark you cannot read feather/fur detail across most of it. A moody-backlight shot where only edges and bright features show counts here.
+- `harsh_backlight` — heavy backlighting where the light source is behind the subject and the front (eye, face, body) is in deep shadow as a result. Often goes WITH underexposed. The image only works as a silhouette.
+- `heavy_noise` — visible grain that hurts the image at viewing size, beyond what light NR can fix.
+- `obstructed` — branches, grass, fence wires, or other elements crossing the subject in a way that can't be cropped out.
+- `cluttered_background` — distracting elements behind the subject (busy twigs, harsh sun spots, bright distractions) that pull the eye and can't be cropped away.
+- `subject_too_small` — subject occupies so little of the frame that the image is more landscape than wildlife portrait, with no narrative reason for it.
+
+RULES:
+- An EMPTY array is correct only when the image actually has no visible flaws. Most images have at least one. Don't withhold issues just because you've decided to keep the image.
+- For every issue you flag, the notes MUST describe specifically where you see it ("body in deep shadow from the chest down", "soft on the eye but beak is sharp", "telephone wire crossing the bird's neck"). If you can't be specific, don't flag it.
+- DO NOT invent issues you can't see at this resolution. Hallucinating flaws is just as bad as missing them.
 
 INTERNAL CONSISTENCY — these must agree. CHECK ALL OF THESE BEFORE RETURNING:
 - `in_focus` is the simple yes/no overall question: is the SUBJECT sharp enough to use? If `in_focus` is "no", `technical_issues` MUST include "out_of_focus", and `eye_focus` MUST be "soft" or "not_visible".
 
 **THE EYE_FOCUS RULE — STRICT. THIS IS THE #1 HALLUCINATION FAILURE MODE.**
-`eye_focus = "sharp"` REQUIRES POSITIVE VISUAL EVIDENCE OF SHARPNESS in the actual eye area:
+
+`eye_focus` refers ONLY to the literal eye organ on the animal's head — the eyeball in its socket. NOTHING ELSE counts as "the eye":
+- **DECORATIVE EYESPOTS ARE NOT EYES.** The "eye" patterns on a peacock's train feathers, the eyespots on butterfly wings, the false eye-markings on the back of an owl's head, the ocelli on a moth — these are decorative patterns that LOOK like eyes. They are NOT what `eye_focus` is rating. If you cannot see the animal's actual head and its actual eye, `eye_focus` is "not_visible" regardless of how many decorative "eyes" appear in the frame.
+- **THE FACE MUST BE VISIBLE.** If the animal's head is turned away, tucked into its body, hidden by feathers/fur, in deep shadow, or otherwise not clearly showing the actual eye, `eye_focus` is "not_visible". A back-of-animal shot where you see only feathers / fur / wings is `eye_focus="not_visible"`, period.
+
+`eye_focus = "sharp"` REQUIRES, in the actual eye on the head:
 - A visible catchlight (highlight reflection in the iris/pupil) showing crisp edges, OR
-- Clear visible iris/pupil structure that's in focus.
-If you can only see WHERE the eye is (a dark shape, an outline, a guess based on the bird's face) but cannot see actual sharpness DETAIL in the eye itself, the answer is "soft" or "not_visible" — never "sharp". Sharp on adjacent features (beak, fur) does NOT transfer to the eye. Each is graded independently on what is actually visible at THIS resolution.
-- **eye_focus = "sharp" is forbidden when the eye is in shadow, backlit-into-darkness, or shows no catchlight/iris detail.** Even if the face is technically visible. "I can see where the eye is" ≠ "the eye is sharp".
+- Clear visible iris/pupil structure that's in focus at this resolution.
+
+If you can only see WHERE the eye is (a dark shape, an outline, a guess based on the bird's face), or only see a decorative eyespot, or only see the back/side of the animal where the head isn't visible — the answer is "soft" or "not_visible" — never "sharp". Sharp on adjacent features (beak, fur, wing feathers, train feathers) does NOT transfer to the eye. Each is graded independently on what is actually visible at THIS resolution.
+- **eye_focus = "sharp" is forbidden when the eye is in shadow, backlit-into-darkness, hidden, tucked, turned away, or shows no catchlight/iris detail.** Even if the face is technically visible. "I can see where the eye is" ≠ "the eye is sharp". "I can see decorative eye-patterns on the feathers" ≠ "the eye is sharp".
+
+**SUBJECT VISIBILITY RULE.** If you cannot see the SUBJECT'S head AND face AND a substantial portion of its body clearly (more than half of the animal hidden, tucked, or in deep shadow), this is a candidate for keep="no" unless something exceptional is happening (rare behavior, dramatic moment). "Can't see half the animal" is not a strong wildlife photo by default. Flag this case in notes: name which parts of the animal are not visible.
 
 - **SILHOUETTE / DEEP SHADOW RULE: If `is_silhouette` is true, OR if the subject's face is in deep shadow with no visible eye / facial detail, `eye_focus` MUST be "not_visible". Never "sharp".**
 
 - **HEAVY-SHADOW SUBJECT RULE (the silhouette-adjacent case): Even when `is_silhouette` is false, if the subject's body is mostly crushed-shadow with little visible feather/fur detail, treat it the same way for `keep`. A backlit bird where the only well-lit area is the beak — body in shadow, eye barely visible, edges defined but interior dark — is NOT a keeper just because the composition is strong. See the heavy-backlight example in CALIBRATION below.**
 
 - If `technical_issues` contains "out_of_focus", then `eye_focus` MUST be "soft" or "not_visible" AND `in_focus` MUST be "no".
+- If `technical_issues` contains "soft_edges" (slight softness), `eye_focus` can be either "soft" (if the softness reaches the eye) or "sharp" (if only non-eye details are soft), but `in_focus` can stay "yes" — soft_edges is the in-between case before full out_of_focus.
+- If `technical_issues` contains "underexposed" or "harsh_backlight", and the eye is among the dark areas, `eye_focus` MUST be "not_visible" or "soft" — never "sharp".
 - If `motion` is "blurred" because of camera shake, `technical_issues` MUST include "camera_shake".
 - Notes must never contradict the structured fields. Writing "the bird is in focus with sharp details" while the eye is in shadow is a forbidden hallucination. Be specific about WHAT is sharp — if it's the beak but not the eye, say so.
 
@@ -86,7 +111,9 @@ Default to "no" when:
 A backlit silhouette of a perched bird with no behavior is "no". The photographer will mark it "keep" themselves if they specifically wanted that silhouette.
 
 CALIBRATION EXAMPLES:
-- **Side profile of an Inca tern with a fish in beak, photographed against soft blue background. The bird's body is mostly in deep shadow — the eye is technically there but in shadow with no visible catchlight, only the beak and the fish are well-lit. is_silhouette is debatable — some rim light defines the white throat line, but the body interior has no readable feather detail.** → `eye_focus="not_visible"` (no catchlight, no iris structure visible), `is_silhouette` can be true OR false but it doesn't change the verdict, **`keep="no"`**. The composition is fine and the moment (prey transfer) is fine, but the image only works as a silhouette. The photographer will mark it keep if they specifically wanted that moody-backlight look — the cull AI should NOT pre-select it.
+- **Close-up of a peacock's train feathers showing many decorative eyespots, with the bird's actual head not visible in the frame** → `eye_focus="not_visible"` (the eyespots on feathers are NOT the bird's eye), `keep="no"`. Beautiful feather pattern but the photographer did not catch the actual animal's face. Notes should say: 'Peacock train feathers shown in detail; the bird's actual head is not visible in this frame. The decorative eyespots are not the animal's real eye.' Add `subject_too_small` or `clipped_subject` to technical_issues if applicable.
+- **A dark-furred animal (black cat, black bear, etc.) curled up or with its head tucked, where most of the body is in deep shadow and the face is barely visible** → `eye_focus="not_visible"`, add `underexposed` to technical_issues, `keep="no"`. Notes should say which parts of the animal you can and cannot see. 'Head is tucked into body / face mostly in shadow / can see fur but not facial features clearly' — be specific.
+- **Side profile of an Inca tern with a fish in beak, photographed against soft blue background. The bird's body is mostly in deep shadow — the eye is technically there but in shadow with no visible catchlight, only the beak and the fish are well-lit. is_silhouette is debatable — some rim light defines the white throat line, but the body interior has no readable feather detail.** → `eye_focus="not_visible"` (no catchlight, no iris structure visible), `is_silhouette` can be true OR false but it doesn't change the verdict, add `underexposed` and `harsh_backlight` to technical_issues, **`keep="no"`**. The composition is fine and the moment (prey transfer) is fine, but the image only works as a silhouette. The photographer will mark it keep if they specifically wanted that moody-backlight look — the cull AI should NOT pre-select it.
 - Backlit silhouette of a perched tern, even with prey in beak → keep="no". Same reasoning as above.
 - Clean portrait of a common cardinal in soft front-light, eye sharp with visible catchlight → keep="yes". Usable stock-grade image.
 - Soft-focus shot of a rare species doing something exceptional (mating display) → keep="yes". The moment matters more than technical perfection.
@@ -132,8 +159,10 @@ AI_VOCAB = {
     "composition": ["strong", "standard", "weak"],
     "lighting": ["harsh", "soft", "golden", "low_light", "backlit", "overcast", "mixed"],
     "technical_issues": [
-        "out_of_focus", "camera_shake", "clipped_subject",
-        "blown_highlights", "heavy_noise", "obstructed",
+        "out_of_focus", "soft_edges", "camera_shake", "clipped_subject",
+        "blown_highlights", "underexposed", "harsh_backlight",
+        "heavy_noise", "obstructed", "cluttered_background",
+        "subject_too_small",
     ],
 }
 
