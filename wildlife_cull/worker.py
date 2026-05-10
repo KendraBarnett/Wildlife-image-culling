@@ -17,11 +17,10 @@ class BackgroundWorker:
         self._pause = threading.Event()
         self._thread: threading.Thread | None = None
         self.last_error: str | None = None
-        # Sticky judge index. We process all pending images for the current
-        # judge before advancing, so each Ollama model loads at most once
-        # per pass instead of three times per image.
-        self._current_judge_idx = 0
-        self._warmed_judge: str | None = None
+        # Per-image mode: finish one image fully (every judge in turn)
+        # before moving to the next. Both judges share qwen2.5vl:7b so
+        # there's no model-swap penalty to interleaving them.
+        self._warmed_model: str | None = None
         self.last_timing: dict | None = None
         self.in_flight: dict | None = None
 
@@ -52,7 +51,9 @@ class BackgroundWorker:
 
     @property
     def current_judge(self) -> str:
-        return ai.JUDGES[self._current_judge_idx % len(ai.JUDGES)]["name"]
+        if self.in_flight:
+            return self.in_flight.get("judge", "")
+        return ""
 
     def cancel_pending(self) -> int:
         with db.connect() as conn:
@@ -73,31 +74,17 @@ class BackgroundWorker:
                 time.sleep(2.0)
 
     def _ensure_warm(self, judge: dict) -> None:
-        if self._warmed_judge == judge["name"]:
+        """Warm the judge's model. Tracks the warmed model (not judge) so
+        switching between two judges that share a model is a no-op."""
+        if self._warmed_model == judge["model"]:
             return
-        _log(f"loading judge model: {judge['label']} ({judge['model']}). First call may take a minute.")
+        _log(f"loading model: {judge['model']} (for {judge['label']}). First call may take a minute.")
         err = ai.warmup_judge(judge)
         if err:
-            _log(f"warmup for {judge['name']}: {err}")
+            _log(f"warmup for {judge['model']}: {err}")
         else:
-            _log(f"judge ready: {judge['label']} ({judge['model']})")
-        self._warmed_judge = judge["name"]
-
-    def _next_judge_with_work(self) -> tuple[dict, list] | None:
-        """Look for pending work starting at the current judge, falling
-        through to others if the current judge has nothing to do."""
-        n = len(ai.JUDGES)
-        for offset in range(n):
-            idx = (self._current_judge_idx + offset) % n
-            judge = ai.JUDGES[idx]
-            with db.connect() as conn:
-                rows = db.list_pending_for_judge(conn, judge["name"], limit=1)
-            if rows:
-                if idx != self._current_judge_idx:
-                    _log(f"switching judge: {judge['label']} ({judge['model']})")
-                    self._current_judge_idx = idx
-                return judge, rows
-        return None
+            _log(f"model ready: {judge['model']}")
+        self._warmed_model = judge["model"]
 
     def _tick(self) -> bool:
         # Embeddings first — they're independent of the judges.
@@ -124,11 +111,15 @@ class BackgroundWorker:
                     )
             return True
 
-        result = self._next_judge_with_work()
+        judge_names = [j["name"] for j in ai.JUDGES]
+        with db.connect() as conn:
+            result = db.next_pending_image_and_judge(conn, judge_names)
         if not result:
             return False
-        judge, rows = result
-        row = rows[0]
+        judge_name, row = result
+        judge = ai.judge_by_name(judge_name)
+        if judge is None:
+            return False
         self._ensure_warm(judge)
 
         ts = time.time()

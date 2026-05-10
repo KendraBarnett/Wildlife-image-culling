@@ -260,6 +260,31 @@ def list_pending_for_judge(
     return out
 
 
+def next_pending_image_and_judge(
+    conn: sqlite3.Connection,
+    judge_names: list[str],
+) -> Optional[tuple[str, sqlite3.Row]]:
+    """Per-image mode: walk images in id order and return the first
+    (judge_name, image) pair where that judge has not yet reached a
+    terminal status (done/error) on that image. This finishes one image
+    fully (every judge in turn) before moving to the next."""
+    rows = conn.execute(
+        "SELECT * FROM images WHERE ai_status NOT IN ('cancelled') ORDER BY id"
+    ).fetchall()
+    for r in rows:
+        data = {}
+        if r["ai_judges_json"]:
+            try:
+                data = json.loads(r["ai_judges_json"])
+            except Exception:
+                data = {}
+        for name in judge_names:
+            existing = data.get(name, {}).get("status")
+            if existing not in ("done", "error"):
+                return name, r
+    return None
+
+
 def set_ai_result(conn: sqlite3.Connection, image_id: int, ai: dict, raw_json: str, ts: float) -> None:
     issues = ai.get("technical_issues") or []
     if not isinstance(issues, list):
