@@ -263,7 +263,7 @@ def api_images(
     sql = (
         "SELECT id, filename, folder, is_raw, width, height, "
         "ai_status, ai_artistic_score, ai_portfolio_score, "
-        "ai_eye_focus, ai_motion, ai_composition, ai_lighting, "
+        "ai_in_focus, ai_eye_focus, ai_motion, ai_composition, ai_lighting, "
         "ai_is_silhouette, ai_subject, ai_animal_type, ai_species, "
         "ai_technical_issues, ai_judges_json, ai_feedback_json, "
         "focus_score, focus_label, burst_id, burst_role, "
@@ -389,6 +389,7 @@ class FeedbackReq(BaseModel):
     marked_wrong: bool = False
     artistic: Optional[float] = Field(None, ge=0, le=10)
     portfolio: Optional[float] = Field(None, ge=0, le=10)
+    in_focus: Optional[str] = None
     eye_focus: Optional[str] = None
     motion: Optional[str] = None
     composition: Optional[str] = None

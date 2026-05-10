@@ -284,6 +284,7 @@ function renderFeedback(img) {
     if (typeof fb.portfolio === "number") bits.push(`Port ${formatScore(fb.portfolio)}`);
     if (fb.animal_type) bits.push(`Type: ${esc(fb.animal_type)}`);
     if (fb.species) bits.push(`Species: ${esc(fb.species)}`);
+    if (fb.in_focus) bits.push(`In focus: ${fb.in_focus === "yes" ? "Yes" : "No"}`);
     if (fb.eye_focus) bits.push(`Eye: ${esc(pretty(fb.eye_focus))}`);
     if (fb.motion) bits.push(`Motion: ${esc(pretty(fb.motion))}`);
     if (fb.composition) bits.push(`Composition: ${esc(pretty(fb.composition))}`);
@@ -306,6 +307,7 @@ function renderFeedback(img) {
   setVal("#fb-animal-type", fb && fb.animal_type);
   setVal("#fb-species", fb && fb.species);
   setVal("#fb-subject", fb && fb.subject);
+  setVal("#fb-in-focus", fb && fb.in_focus);
   setVal("#fb-eye-focus", fb && fb.eye_focus);
   setVal("#fb-motion", fb && fb.motion);
   setVal("#fb-composition", fb && fb.composition);
@@ -362,11 +364,11 @@ function renderAiBlock(img) {
 
   el.innerHTML = `
     <div class="judges-row">${cards}</div>
-    <div class="row"><span>Sharpness</span><strong>${img.focus_label ? esc(pretty(img.focus_label)) : "—"}${img.focus_score != null ? ` <span class="muted">(${Math.round(img.focus_score)})</span>` : ""}</strong></div>
     ${img.burst_id ? `<div class="row"><span>Burst</span><strong>#${img.burst_id} · ${esc(pretty(img.burst_role || ""))}</strong></div>` : ""}
     <div class="row"><span>Type</span><strong>${esc(a.animal_type) || "—"}</strong></div>
     <div class="row"><span>Species</span><strong>${esc(a.species) || "—"}</strong></div>
     <div class="row"><span>Subject</span><strong>${esc(a.subject) || "—"}</strong></div>
+    <div class="row"><span>In focus</span><strong>${a.in_focus === "yes" ? "Yes" : a.in_focus === "no" ? "No" : "—"}</strong></div>
     <div class="row"><span>Eye focus</span><strong>${esc(pretty(a.eye_focus)) || "—"}</strong></div>
     <div class="row"><span>Motion</span><strong>${esc(pretty(a.motion)) || "—"}</strong></div>
     <div class="row"><span>Composition</span><strong>${esc(pretty(a.composition)) || "—"}</strong></div>
@@ -689,6 +691,7 @@ document.addEventListener("DOMContentLoaded", () => {
       animal_type: strOrNull("#fb-animal-type"),
       species: strOrNull("#fb-species"),
       subject: strOrNull("#fb-subject"),
+      in_focus: strOrNull("#fb-in-focus"),
       eye_focus: strOrNull("#fb-eye-focus"),
       motion: strOrNull("#fb-motion"),
       composition: strOrNull("#fb-composition"),

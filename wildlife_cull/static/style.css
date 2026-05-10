@@ -52,7 +52,7 @@ body.select-mode .card:hover { outline: 2px solid var(--accent); }
 .card.ai-status-error { box-shadow: inset 0 0 0 2px rgba(255, 100, 100, 0.5); }
 .card.ai-status-cancelled { opacity: 0.5; }
 .modal-reanalyze { margin-top: 8px; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
-.judges-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+.judges-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
 .judge-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; min-height: 80px; display: flex; flex-direction: column; gap: 4px; }
 .judge-card.error { border-color: rgba(255, 100, 100, 0.5); background: rgba(255, 100, 100, 0.08); }
 .judge-card.pending { opacity: 0.55; }

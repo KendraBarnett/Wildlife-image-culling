@@ -23,6 +23,7 @@ pick values STRICTLY from the listed options for every enum field:
   "subject": "<short phrase, e.g. 'great horned owl perched on branch'>",
   "animal_type": <PICK EXACTLY ONE FROM THIS DROPDOWN — no other value is allowed: "Mammal" | "Bird" | "Reptile" | "Amphibian" | "Fish" | "Insect" | "Other" | "Unknown">,
   "species": "<best-guess common name, e.g. 'Mallard', 'Western Lowland Gorilla'. Use 'Unknown' if unsure>",
+  "in_focus": <PICK EXACTLY ONE: "yes" | "no">,
   "eye_focus": <PICK EXACTLY ONE: "sharp" | "soft" | "not_visible" | "n/a">,
   "motion": <PICK EXACTLY ONE: "still" | "subtle" | "in_motion" | "blurred">,
   "composition": <PICK EXACTLY ONE: "strong" | "standard" | "weak">,
@@ -47,9 +48,10 @@ DO NOT INVENT FLAWS. The single biggest failure mode is hallucinating problems t
 - Do not flag "blown_highlights" unless you can actually see white pixels with no detail in the subject area.
 
 INTERNAL CONSISTENCY — these must agree:
-- If `technical_issues` contains "out_of_focus", then `eye_focus` MUST be "soft" or "not_visible". Saying "sharp" in one place while flagging out-of-focus in another is a forbidden contradiction.
+- `in_focus` is the simple yes/no overall question: is the SUBJECT sharp enough to use? If `in_focus` is "no", `technical_issues` MUST include "out_of_focus", and BOTH `eye_focus` MUST be "soft" or "not_visible". If `in_focus` is "yes", `eye_focus` MUST be "sharp" and "out_of_focus" MUST NOT appear in technical_issues.
+- If `technical_issues` contains "out_of_focus", then `eye_focus` MUST be "soft" or "not_visible" AND `in_focus` MUST be "no". Saying "sharp" in one place while flagging out-of-focus in another is a forbidden contradiction.
 - If `motion` is "blurred" because of camera shake, `technical_issues` MUST include "camera_shake".
-- Notes must never contradict the structured fields. If you write "tack sharp" in notes, eye_focus cannot be "soft" and out_of_focus cannot be in issues.
+- Notes must never contradict the structured fields. If you write "tack sharp" in notes, eye_focus cannot be "soft" and out_of_focus cannot be in issues and in_focus must be "yes".
 
 SCORE CAPS WHEN A REAL ISSUE IS PRESENT (only apply if the issue is genuine, not invented):
 - Any `out_of_focus` flag: cap BOTH artistic_score AND portfolio_potential at 3.0. Out-of-focus images cannot ship.
@@ -161,6 +163,7 @@ STOCK-SPECIFIC weights when scoring:
 # to the UI so dropdowns show exactly the values the model can return.
 AI_VOCAB = {
     "animal_type": ["Mammal", "Bird", "Reptile", "Amphibian", "Fish", "Insect", "Other", "Unknown"],
+    "in_focus": ["yes", "no"],
     "eye_focus": ["sharp", "soft", "not_visible", "n/a"],
     "motion": ["still", "subtle", "in_motion", "blurred"],
     "composition": ["strong", "standard", "weak"],
@@ -258,7 +261,7 @@ def format_feedback_block(rows: list[dict], max_examples: int = 5) -> str:
         for k in ("artistic", "portfolio"):
             if k in fb:
                 user_bits.append(f"{k}={fb[k]}")
-        for k in ("eye_focus", "motion", "composition", "lighting",
+        for k in ("in_focus", "eye_focus", "motion", "composition", "lighting",
                   "animal_type", "species", "subject"):
             if k in fb and fb[k]:
                 user_bits.append(f"{k}={fb[k]}")

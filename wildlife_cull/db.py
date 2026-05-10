@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS images (
     ai_json TEXT,
     ai_artistic_score INTEGER,
     ai_portfolio_score INTEGER,
+    ai_in_focus TEXT,
     ai_eye_focus TEXT,
     ai_motion TEXT,
     ai_composition TEXT,
@@ -85,6 +86,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
         ("focus_label", "ALTER TABLE images ADD COLUMN focus_label TEXT"),
         ("burst_id", "ALTER TABLE images ADD COLUMN burst_id INTEGER"),
         ("burst_role", "ALTER TABLE images ADD COLUMN burst_role TEXT"),
+        ("ai_in_focus", "ALTER TABLE images ADD COLUMN ai_in_focus TEXT"),
     ]:
         if name not in cols:
             conn.execute(ddl)
@@ -203,6 +205,7 @@ def finalize_image_if_complete(
             ai_status='done',
             ai_artistic_score=?,
             ai_portfolio_score=?,
+            ai_in_focus=?,
             ai_eye_focus=?,
             ai_motion=?,
             ai_composition=?,
@@ -217,6 +220,7 @@ def finalize_image_if_complete(
         (
             avg_a,
             avg_p,
+            primary.get("in_focus"),
             primary.get("eye_focus"),
             primary.get("motion"),
             primary.get("composition"),
@@ -295,6 +299,7 @@ def set_ai_result(conn: sqlite3.Connection, image_id: int, ai: dict, raw_json: s
             ai_json=?,
             ai_artistic_score=?,
             ai_portfolio_score=?,
+            ai_in_focus=?,
             ai_eye_focus=?,
             ai_motion=?,
             ai_composition=?,
@@ -310,6 +315,7 @@ def set_ai_result(conn: sqlite3.Connection, image_id: int, ai: dict, raw_json: s
             raw_json,
             ai.get("artistic_score"),
             ai.get("portfolio_potential"),
+            ai.get("in_focus"),
             ai.get("eye_focus"),
             ai.get("motion"),
             ai.get("composition"),
