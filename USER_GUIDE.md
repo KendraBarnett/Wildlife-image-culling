@@ -15,12 +15,25 @@ Your browser opens to the app.
 
 ## 2. Ingest a folder
 
-Click **Open folder**, paste the full path to the folder you want to cull.
-Examples:
+At the top of the page there's a long text box and a blue **Ingest** button.
+Put the full path to the folder you want to cull into the text box, then
+click **Ingest**.
 
-- An SD card mount: `/Volumes/EOS_R5/DCIM/100EOSR5`
-- A shoot folder you've copied to disk: `/Users/kendra/Photos/2026-05-09 Owls`
-- An old archive: `/Users/kendra/Photos/Archive/2019`
+Three easy ways to get a folder path on a Mac (pick whichever you like):
+
+- **Drag-and-drop:** open Finder, find the folder, and drag the folder icon
+  directly into the text box in your browser. The full path appears
+  automatically.
+- **Copy as Pathname:** in Finder, right-click the folder, hold the
+  **Option (⌥)** key, and the menu changes — pick **"Copy [folder name] as
+  Pathname"**. Then paste into the text box with ⌘V.
+- **Type it:** for obvious locations, just type. Examples:
+  - An SD card mount: `/Volumes/EOS_R5/DCIM/100EOSR5`
+  - A shoot folder on disk: `~/Pictures/2026-05-09 Owls`
+  - An old archive: `~/Pictures/Archive/2019`
+
+The **recursive** checkbox (on by default) tells the app to walk into
+sub-folders too. Leave it on unless you have a specific reason not to.
 
 Click **Ingest**. The app:
 
