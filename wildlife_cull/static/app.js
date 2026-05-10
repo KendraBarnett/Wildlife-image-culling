@@ -36,9 +36,28 @@ async function refreshHealth() {
       el.textContent = h.ollama_issue || "issue";
       el.className = "health bad";
     }
+    updateWorkerControls(!!h.worker_paused);
   } catch (e) {
     $("#health").textContent = "server unreachable";
     $("#health").className = "health bad";
+  }
+}
+
+function updateWorkerControls(paused) {
+  const pill = $("#worker-state");
+  pill.textContent = paused ? "analysis: paused" : "analysis: running";
+  pill.classList.toggle("paused", paused);
+  $("#worker-pause").classList.toggle("hidden", paused);
+  $("#worker-resume").classList.toggle("hidden", !paused);
+}
+
+async function workerAction(path) {
+  try {
+    const r = await jpost(path, {});
+    updateWorkerControls(!!r.paused);
+    return r;
+  } catch (e) {
+    alert("Action failed: " + e.message);
   }
 }
 
@@ -162,7 +181,9 @@ function renderAiBlock(img) {
     return;
   }
   if (img.ai_status === "error") {
-    el.innerHTML = `<div class="pending">AI error. See terminal.</div>`;
+    const errMsg = (img.ai && img.ai.error) ? img.ai.error : "(no detail)";
+    el.innerHTML = `<div class="ai-error"><div class="ai-error-title">AI error</div><div class="ai-error-detail"></div></div>`;
+    el.querySelector(".ai-error-detail").textContent = errMsg;
     return;
   }
   const a = img.ai || {};
@@ -338,6 +359,18 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#modal-close").onclick = closeModal;
   $("#prev-btn").onclick = () => step(-1);
   $("#next-btn").onclick = () => step(1);
+
+  $("#worker-pause").onclick = () => workerAction("/api/worker/pause");
+  $("#worker-resume").onclick = () => workerAction("/api/worker/resume");
+  $("#worker-cancel").onclick = async () => {
+    if (!confirm("Cancel all pending AI analysis? Already-analyzed images and your ratings are kept; pending images are marked cancelled and won't be analyzed unless re-ingested.")) return;
+    const r = await workerAction("/api/worker/cancel");
+    if (r) {
+      $("#ingest-status").textContent = `cancelled ${r.cancelled} pending`;
+      refreshStats();
+      if (state.folder) refreshGrid();
+    }
+  };
 
   $("#browse-btn").onclick = () => {
     const current = $("#folder-input").value.trim();

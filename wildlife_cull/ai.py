@@ -34,20 +34,52 @@ def _read_b64(path: Path) -> str:
     return base64.b64encode(path.read_bytes()).decode("ascii")
 
 
-def analyze_image(preview_path: Path, timeout: float = 120.0) -> tuple[dict, str]:
+def analyze_image(preview_path: Path, idle_timeout: float = 120.0, total_timeout: float = 600.0) -> tuple[dict, str]:
+    if not preview_path.exists():
+        raise FileNotFoundError(f"Preview missing: {preview_path}")
     payload = {
         "model": VISION_MODEL,
         "prompt": VISION_PROMPT,
         "images": [_read_b64(preview_path)],
-        "stream": False,
+        "stream": True,
         "format": "json",
+        "keep_alive": "30m",
         "options": {"temperature": 0.2},
     }
-    with httpx.Client(timeout=timeout) as client:
-        r = client.post(f"{OLLAMA_HOST}/api/generate", json=payload)
-        r.raise_for_status()
-        data = r.json()
-    text = data.get("response", "").strip()
+    timeout = httpx.Timeout(connect=10.0, read=idle_timeout, write=30.0, pool=10.0)
+    chunks: list[str] = []
+    started = time.time()
+    last_error: str | None = None
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            with client.stream("POST", f"{OLLAMA_HOST}/api/generate", json=payload) as r:
+                if r.status_code != 200:
+                    body = r.read().decode("utf-8", "replace")[:500]
+                    raise RuntimeError(f"Ollama HTTP {r.status_code}: {body}")
+                for line in r.iter_lines():
+                    if not line:
+                        continue
+                    if time.time() - started > total_timeout:
+                        raise RuntimeError(f"Ollama exceeded total timeout of {total_timeout:.0f}s")
+                    try:
+                        evt = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if evt.get("error"):
+                        last_error = str(evt["error"])
+                        break
+                    chunk = evt.get("response", "")
+                    if chunk:
+                        chunks.append(chunk)
+                    if evt.get("done"):
+                        break
+    except httpx.RequestError as exc:
+        raise RuntimeError(f"Cannot reach Ollama at {OLLAMA_HOST}: {exc}") from exc
+    if last_error:
+        raise RuntimeError(f"Ollama error: {last_error}")
+    text = "".join(chunks).strip()
+    if not text:
+        raise RuntimeError("Ollama returned empty response (model may have failed to load or run out of memory)")
     parsed = _parse_json_loose(text)
     return parsed, text
 

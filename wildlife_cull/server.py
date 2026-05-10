@@ -42,7 +42,31 @@ def health() -> dict:
         "ollama_issue": issue,
         "vision_model": VISION_MODEL,
         "worker_last_error": worker.last_error,
+        "worker_paused": worker.paused,
     }
+
+
+@app.get("/api/worker/status")
+def worker_status() -> dict:
+    return {"paused": worker.paused, "last_error": worker.last_error}
+
+
+@app.post("/api/worker/pause")
+def worker_pause() -> dict:
+    worker.pause()
+    return {"paused": worker.paused}
+
+
+@app.post("/api/worker/resume")
+def worker_resume() -> dict:
+    worker.resume()
+    return {"paused": worker.paused}
+
+
+@app.post("/api/worker/cancel")
+def worker_cancel() -> dict:
+    cancelled = worker.cancel_pending()
+    return {"cancelled": cancelled, "paused": worker.paused}
 
 
 class IngestReq(BaseModel):

@@ -51,6 +51,12 @@
       <option value="5">5 stars only</option>
     </select>
     <span id="stats" class="stats"></span>
+    <span class="worker-controls">
+      <span id="worker-state" class="worker-pill">analysis: running</span>
+      <button id="worker-pause" class="secondary" title="Pause AI analysis">Pause</button>
+      <button id="worker-resume" class="secondary hidden" title="Resume AI analysis">Resume</button>
+      <button id="worker-cancel" class="danger" title="Cancel all pending analysis">Stop &amp; clear queue</button>
+    </span>
   </section>
 
   <main id="grid"></main>
