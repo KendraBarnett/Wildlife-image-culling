@@ -6,6 +6,7 @@ const state = {
   saveTimer: null,
   browse: { path: "", parent: null, dirs: [], isRoot: true },
   aiVocab: null,
+  judges: [],
   selectMode: false,
   selected: new Set(),
 };
@@ -94,8 +95,10 @@ async function refreshAiVocab() {
   if (state.aiVocab) return;
   try {
     state.aiVocab = await jget("/api/ai-vocab");
+    state.judges = await jget("/api/judges");
   } catch (e) {
     state.aiVocab = {};
+    state.judges = [];
     return;
   }
   for (const sel of document.querySelectorAll("select[data-vocab]")) {
@@ -242,23 +245,32 @@ async function openModal(id) {
 
 function renderAiBlock(img) {
   const el = $("#modal-ai");
-  if (img.ai_status === "pending") {
-    el.innerHTML = `<div class="pending">AI is analyzing this image…</div>`;
+  const judges = state.judges || [];
+  const judgeData = img.ai_judges || {};
+
+  if (img.ai_status === "pending" && Object.keys(judgeData).length === 0) {
+    el.innerHTML = `<div class="pending">Analyzing this image. Each judge runs in turn (Editor → NatGeo → Stock).</div>`;
     return;
   }
-  if (img.ai_status === "error") {
+  if (img.ai_status === "error" && Object.keys(judgeData).length === 0) {
     const errMsg = (img.ai && img.ai.error) ? img.ai.error : "(no detail)";
     el.innerHTML = `<div class="ai-error"><div class="ai-error-title">AI error</div><div class="ai-error-detail"></div></div>`;
     el.querySelector(".ai-error-detail").textContent = errMsg;
     return;
   }
-  const a = img.ai || {};
+
+  const cards = judges.map((j) => renderJudgeCard(j, judgeData[j.name])).join("");
+  const a = (() => {
+    const primary = judges.find((j) => j.primary) || judges[0];
+    if (primary && judgeData[primary.name] && judgeData[primary.name].result) {
+      return judgeData[primary.name].result;
+    }
+    return img.ai || {};
+  })();
   const issues = (a.technical_issues || []).map(pretty).join(", ") || "—";
+
   el.innerHTML = `
-    <div class="scores-row">
-      <div class="score-pill"><div class="label">Artistic</div><div class="val">${a.artistic_score ?? "?"}</div></div>
-      <div class="score-pill"><div class="label">Portfolio</div><div class="val">${a.portfolio_potential ?? "?"}</div></div>
-    </div>
+    <div class="judges-row">${cards}</div>
     <div class="row"><span>Type</span><strong>${esc(a.animal_type) || "—"}</strong></div>
     <div class="row"><span>Species</span><strong>${esc(a.species) || "—"}</strong></div>
     <div class="row"><span>Subject</span><strong>${esc(a.subject) || "—"}</strong></div>
@@ -270,6 +282,24 @@ function renderAiBlock(img) {
     <div class="row"><span>Issues</span><strong>${esc(issues)}</strong></div>
     ${a.notes ? `<div class="notes-line">${esc(a.notes)}</div>` : ""}
   `;
+}
+
+function renderJudgeCard(judge, slot) {
+  if (!slot) {
+    return `<div class="judge-card pending"><div class="judge-name">${esc(judge.label)}</div><div class="judge-state">Pending…</div><div class="judge-model">${esc(judge.model)}</div></div>`;
+  }
+  if (slot.status === "error") {
+    const detail = slot.error || "(no detail)";
+    return `<div class="judge-card error"><div class="judge-name">${esc(judge.label)}</div><div class="judge-state">Error</div><div class="judge-error-detail" title="${esc(detail)}">${esc(detail.slice(0, 120))}</div><div class="judge-model">${esc(judge.model)}</div></div>`;
+  }
+  const r = slot.result || {};
+  const notes = r.notes ? `<div class="judge-notes">${esc(r.notes)}</div>` : "";
+  return `<div class="judge-card done">
+    <div class="judge-name">${esc(judge.label)}</div>
+    <div class="judge-scores"><span class="score">Art <b>${r.artistic_score ?? "?"}</b></span><span class="score">Port <b>${r.portfolio_potential ?? "?"}</b></span></div>
+    ${notes}
+    <div class="judge-model">${esc(judge.model)}</div>
+  </div>`;
 }
 
 function esc(s) {

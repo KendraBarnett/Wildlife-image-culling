@@ -41,6 +41,8 @@ def health() -> dict:
         "ok": issue is None,
         "ollama_issue": issue,
         "vision_model": VISION_MODEL,
+        "judges": [{"name": j["name"], "label": j["label"], "model": j["model"]} for j in ai.JUDGES],
+        "current_judge": worker.current_judge,
         "worker_last_error": worker.last_error,
         "worker_paused": worker.paused,
     }
@@ -137,6 +139,14 @@ def api_folder(folder: str) -> dict:
 @app.get("/api/ai-vocab")
 def api_ai_vocab() -> dict:
     return ai.AI_VOCAB
+
+
+@app.get("/api/judges")
+def api_judges() -> list[dict]:
+    return [
+        {"name": j["name"], "label": j["label"], "model": j["model"], "weight": j["weight"], "primary": bool(j.get("primary"))}
+        for j in ai.JUDGES
+    ]
 
 
 @app.get("/api/images")
@@ -292,6 +302,20 @@ def api_image(image_id: int) -> dict:
             d["ai"] = json.loads(d["ai_json"])
         except Exception:
             d["ai"] = {"_unparsed": d["ai_json"]}
+    if d.get("ai_judges_json"):
+        try:
+            d["ai_judges"] = json.loads(d["ai_judges_json"])
+        except Exception:
+            d["ai_judges"] = {}
+    else:
+        d["ai_judges"] = {}
+    if d.get("ai_technical_issues"):
+        try:
+            d["ai_technical_issues"] = json.loads(d["ai_technical_issues"])
+        except Exception:
+            d["ai_technical_issues"] = []
+    else:
+        d["ai_technical_issues"] = []
     return d
 
 

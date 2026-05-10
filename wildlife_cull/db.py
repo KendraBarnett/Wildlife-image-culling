@@ -1,5 +1,6 @@
 import sqlite3
 import json
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional, Iterator
@@ -35,6 +36,7 @@ CREATE TABLE IF NOT EXISTS images (
     ai_species TEXT,
     ai_technical_issues TEXT,
     ai_analyzed_at REAL,
+    ai_judges_json TEXT,
 
     embedding BLOB,
     embedding_model TEXT,
@@ -72,6 +74,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
         ("ai_technical_issues", "ALTER TABLE images ADD COLUMN ai_technical_issues TEXT"),
         ("ai_animal_type", "ALTER TABLE images ADD COLUMN ai_animal_type TEXT"),
         ("ai_species", "ALTER TABLE images ADD COLUMN ai_species TEXT"),
+        ("ai_judges_json", "ALTER TABLE images ADD COLUMN ai_judges_json TEXT"),
     ]:
         if name not in cols:
             conn.execute(ddl)
@@ -104,6 +107,146 @@ def upsert_image(conn: sqlite3.Connection, row: dict) -> int:
         return cur.lastrowid
     existing = conn.execute("SELECT id FROM images WHERE path=?", (row["path"],)).fetchone()
     return existing["id"]
+
+
+def _read_judges_json(conn: sqlite3.Connection, image_id: int) -> dict:
+    row = conn.execute("SELECT ai_judges_json FROM images WHERE id=?", (image_id,)).fetchone()
+    if not row or not row["ai_judges_json"]:
+        return {}
+    try:
+        data = json.loads(row["ai_judges_json"])
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def set_judge_result(
+    conn: sqlite3.Connection,
+    image_id: int,
+    judge_name: str,
+    status: str,
+    model: str,
+    payload: Optional[dict],
+    raw: Optional[str],
+    error: Optional[str],
+    ts: float,
+) -> dict:
+    """Update a single judge's slot in ai_judges_json. Returns the merged dict."""
+    judges = _read_judges_json(conn, image_id)
+    judges[judge_name] = {
+        "status": status,
+        "model": model,
+        "result": payload,
+        "raw": raw,
+        "error": error,
+        "analyzed_at": ts,
+    }
+    conn.execute(
+        "UPDATE images SET ai_judges_json=? WHERE id=?",
+        (json.dumps(judges), image_id),
+    )
+    return judges
+
+
+def finalize_image_if_complete(
+    conn: sqlite3.Connection,
+    image_id: int,
+    judge_names: list[str],
+) -> bool:
+    """If every requested judge has terminal status, recompute combined fields
+    and flip ai_status to 'done' (or 'error' if every judge errored).
+    Returns True if the image was finalized this call."""
+    judges = _read_judges_json(conn, image_id)
+    terminal = {"done", "error"}
+    if not all(judges.get(n, {}).get("status") in terminal for n in judge_names):
+        return False
+
+    done = [judges[n] for n in judge_names if judges[n]["status"] == "done" and judges[n].get("result")]
+    if not done:
+        first_err = next((judges[n].get("error") or "unknown" for n in judge_names if judges[n]["status"] == "error"), "no judges succeeded")
+        conn.execute(
+            "UPDATE images SET ai_status='error' WHERE id=?",
+            (image_id,),
+        )
+        # Keep last error message in ai_json for the UI's error display.
+        conn.execute(
+            "UPDATE images SET ai_json=? WHERE id=?",
+            (json.dumps({"error": first_err}), image_id),
+        )
+        return True
+
+    artistic = [d["result"].get("artistic_score") for d in done if isinstance(d["result"].get("artistic_score"), (int, float))]
+    portfolio = [d["result"].get("portfolio_potential") for d in done if isinstance(d["result"].get("portfolio_potential"), (int, float))]
+    avg_a = round(sum(artistic) / len(artistic)) if artistic else None
+    avg_p = round(sum(portfolio) / len(portfolio)) if portfolio else None
+
+    primary = next((judges[n]["result"] for n in judge_names if judges[n]["status"] == "done" and n == judge_names[0]), None)
+    if primary is None:
+        primary = done[0]["result"]
+    issues = primary.get("technical_issues") or []
+    if not isinstance(issues, list):
+        issues = []
+
+    conn.execute(
+        """UPDATE images SET
+            ai_status='done',
+            ai_artistic_score=?,
+            ai_portfolio_score=?,
+            ai_eye_focus=?,
+            ai_motion=?,
+            ai_composition=?,
+            ai_lighting=?,
+            ai_is_silhouette=?,
+            ai_subject=?,
+            ai_animal_type=?,
+            ai_species=?,
+            ai_technical_issues=?,
+            ai_analyzed_at=?
+        WHERE id=?""",
+        (
+            avg_a,
+            avg_p,
+            primary.get("eye_focus"),
+            primary.get("motion"),
+            primary.get("composition"),
+            primary.get("lighting"),
+            1 if primary.get("is_silhouette") else 0,
+            primary.get("subject"),
+            primary.get("animal_type"),
+            primary.get("species"),
+            json.dumps(issues),
+            time.time(),
+            image_id,
+        ),
+    )
+    return True
+
+
+def list_pending_for_judge(
+    conn: sqlite3.Connection,
+    judge_name: str,
+    limit: int = 1,
+) -> list[sqlite3.Row]:
+    """Find images whose ai_judges_json has no terminal entry for this judge.
+    Skips images that aren't in a fresh 'pending' or 'done'-but-incomplete
+    state and skips cancelled images."""
+    rows = conn.execute(
+        "SELECT * FROM images WHERE ai_status NOT IN ('cancelled') ORDER BY id"
+    ).fetchall()
+    out = []
+    for r in rows:
+        data = {}
+        if r["ai_judges_json"]:
+            try:
+                data = json.loads(r["ai_judges_json"])
+            except Exception:
+                data = {}
+        existing = data.get(judge_name, {}).get("status")
+        if existing not in ("done", "error"):
+            out.append(r)
+            if len(out) >= limit:
+                break
+    return out
 
 
 def set_ai_result(conn: sqlite3.Connection, image_id: int, ai: dict, raw_json: str, ts: float) -> None:
@@ -165,7 +308,8 @@ def reset_ai_for_reanalysis(conn: sqlite3.Connection, image_ids: list[int]) -> i
             ai_animal_type=NULL,
             ai_species=NULL,
             ai_technical_issues=NULL,
-            ai_analyzed_at=NULL
+            ai_analyzed_at=NULL,
+            ai_judges_json=NULL
         WHERE id IN ({placeholders})""",
         image_ids,
     )

@@ -52,6 +52,18 @@ body.select-mode .card:hover { outline: 2px solid var(--accent); }
 .card.ai-status-error { box-shadow: inset 0 0 0 2px rgba(255, 100, 100, 0.5); }
 .card.ai-status-cancelled { opacity: 0.5; }
 .modal-reanalyze { margin-top: 8px; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+.judges-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+.judge-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; min-height: 80px; display: flex; flex-direction: column; gap: 4px; }
+.judge-card.error { border-color: rgba(255, 100, 100, 0.5); background: rgba(255, 100, 100, 0.08); }
+.judge-card.pending { opacity: 0.55; }
+.judge-name { font-weight: 600; font-size: 12px; color: var(--fg); }
+.judge-state { font-size: 11px; color: var(--muted); font-style: italic; }
+.judge-scores { display: flex; gap: 10px; }
+.judge-scores .score { font-size: 11px; color: var(--muted); }
+.judge-scores .score b { color: var(--accent); font-size: 14px; margin-left: 2px; }
+.judge-notes { font-size: 11px; color: var(--muted); font-style: italic; line-height: 1.3; }
+.judge-error-detail { font-size: 10px; color: #ff8a8a; font-family: ui-monospace, SFMono-Regular, monospace; word-break: break-word; }
+.judge-model { font-size: 9px; color: var(--muted); opacity: 0.7; font-family: ui-monospace, SFMono-Regular, monospace; margin-top: auto; }
 .stats { margin-left: auto; }
 .worker-controls { display: flex; align-items: center; gap: 6px; }
 .worker-pill { padding: 3px 8px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--border); font-size: 11px; color: var(--muted); }

@@ -17,6 +17,11 @@ class BackgroundWorker:
         self._pause = threading.Event()
         self._thread: threading.Thread | None = None
         self.last_error: str | None = None
+        # Sticky judge index. We process all pending images for the current
+        # judge before advancing, so each Ollama model loads at most once
+        # per pass instead of three times per image.
+        self._current_judge_idx = 0
+        self._warmed_judge: str | None = None
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -25,15 +30,6 @@ class BackgroundWorker:
         self._thread = threading.Thread(target=self._run, name="wc-worker", daemon=True)
         self._thread.start()
         _log("background worker started")
-        threading.Thread(target=self._warmup, name="wc-warmup", daemon=True).start()
-
-    def _warmup(self) -> None:
-        _log("warming up vision model (this may take a minute on first run)...")
-        err = ai.warmup_vision_model()
-        if err:
-            _log(f"warmup: {err}")
-        else:
-            _log("warmup: vision model loaded and kept warm")
 
     def stop(self) -> None:
         self._stop.set()
@@ -52,9 +48,12 @@ class BackgroundWorker:
     def paused(self) -> bool:
         return self._pause.is_set()
 
+    @property
+    def current_judge(self) -> str:
+        return ai.JUDGES[self._current_judge_idx % len(ai.JUDGES)]["name"]
+
     def cancel_pending(self) -> int:
-        from . import db as _db
-        with _db.connect() as conn:
+        with db.connect() as conn:
             cur = conn.execute(
                 "UPDATE images SET ai_status='cancelled' WHERE ai_status='pending'"
             )
@@ -71,7 +70,35 @@ class BackgroundWorker:
             if not did_work:
                 time.sleep(2.0)
 
+    def _ensure_warm(self, judge: dict) -> None:
+        if self._warmed_judge == judge["name"]:
+            return
+        _log(f"loading judge model: {judge['label']} ({judge['model']}). First call may take a minute.")
+        err = ai.warmup_judge(judge)
+        if err:
+            _log(f"warmup for {judge['name']}: {err}")
+        else:
+            _log(f"judge ready: {judge['label']} ({judge['model']})")
+        self._warmed_judge = judge["name"]
+
+    def _next_judge_with_work(self) -> tuple[dict, list] | None:
+        """Look for pending work starting at the current judge, falling
+        through to others if the current judge has nothing to do."""
+        n = len(ai.JUDGES)
+        for offset in range(n):
+            idx = (self._current_judge_idx + offset) % n
+            judge = ai.JUDGES[idx]
+            with db.connect() as conn:
+                rows = db.list_pending_for_judge(conn, judge["name"], limit=1)
+            if rows:
+                if idx != self._current_judge_idx:
+                    _log(f"switching judge: {judge['label']} ({judge['model']})")
+                    self._current_judge_idx = idx
+                return judge, rows
+        return None
+
     def _tick(self) -> bool:
+        # Embeddings first — they're independent of the judges.
         with db.connect() as conn:
             embed_rows = db.list_pending_for_embedding(conn, limit=1)
         if embed_rows:
@@ -95,25 +122,37 @@ class BackgroundWorker:
                     )
             return True
 
-        with db.connect() as conn:
-            ai_rows = db.list_pending_for_ai(conn, limit=1)
-        if ai_rows:
-            row = ai_rows[0]
-            try:
-                parsed, raw = ai.analyze_image(Path(row["preview_path"]))
-                with db.connect() as conn:
-                    db.set_ai_result(conn, row["id"], parsed, raw, time.time())
-            except Exception as exc:
-                detail = f"{type(exc).__name__}: {exc}"
-                msg = f"analyze FAILED for {row['filename']}: {detail}"
-                self.last_error = msg
-                _log("=" * 60)
-                _log(msg)
-                traceback.print_exc(file=sys.stderr)
-                sys.stderr.flush()
-                _log("=" * 60)
-                with db.connect() as conn:
-                    db.set_ai_error(conn, row["id"], detail)
-            return True
+        result = self._next_judge_with_work()
+        if not result:
+            return False
+        judge, rows = result
+        row = rows[0]
+        self._ensure_warm(judge)
 
-        return False
+        ts = time.time()
+        try:
+            parsed, raw = ai.analyze_with_judge(judge, Path(row["preview_path"]))
+            with db.connect() as conn:
+                db.set_judge_result(
+                    conn, row["id"], judge["name"],
+                    status="done", model=judge["model"],
+                    payload=parsed, raw=raw, error=None, ts=ts,
+                )
+                db.finalize_image_if_complete(conn, row["id"], [j["name"] for j in ai.JUDGES])
+        except Exception as exc:
+            detail = f"{type(exc).__name__}: {exc}"
+            msg = f"{judge['label']} FAILED for {row['filename']}: {detail}"
+            self.last_error = msg
+            _log("=" * 60)
+            _log(msg)
+            traceback.print_exc(file=sys.stderr)
+            sys.stderr.flush()
+            _log("=" * 60)
+            with db.connect() as conn:
+                db.set_judge_result(
+                    conn, row["id"], judge["name"],
+                    status="error", model=judge["model"],
+                    payload=None, raw=None, error=detail, ts=ts,
+                )
+                db.finalize_image_if_complete(conn, row["id"], [j["name"] for j in ai.JUDGES])
+        return True

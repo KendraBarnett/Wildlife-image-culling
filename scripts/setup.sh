@@ -36,5 +36,20 @@ pip install -e .
 mkdir -p data data/previews
 
 echo
+echo "Pulling vision models for the three judges (this is a one-time download,"
+echo "about 18 GB total). Each model is used by a different judge persona:"
+echo "  - qwen2.5vl:7b     (Editor judge — technical critic)"
+echo "  - llama3.2-vision  (NatGeo judge — story / editorial)"
+echo "  - minicpm-v        (Stock judge — commercial appeal)"
+echo
+
+for model in "qwen2.5vl:7b" "llama3.2-vision:11b" "minicpm-v"; do
+  echo "Pulling $model ..."
+  ollama pull "$model" || {
+    echo "WARNING: failed to pull $model. You can re-run this script or run 'ollama pull $model' manually."
+  }
+done
+
+echo
 echo "Setup complete."
 echo "Next: ./scripts/run.sh"
