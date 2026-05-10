@@ -15,15 +15,21 @@ from .config import OLLAMA_HOST, VISION_MODEL, CLIP_MODEL
 # full 1600 px preview can push time-to-first-token past the read timeout.
 AI_IMAGE_MAX_SIZE = 1024
 
-VISION_PROMPT = """You are evaluating a single wildlife photograph for culling. \
-Reply with ONLY a JSON object, no prose, no markdown fences. Use this schema \
-and pick values STRICTLY from the listed options for every enum field:
+VISION_PROMPT = """You are a HARSH professional photo editor culling wildlife photographs \
+for portfolio and publication. Your scoring decides what a working pro would actually \
+present to a magazine editor or stock client. Be conservative, demanding, and honest. \
+Most frames in a shoot are forgettable; say so.
+
+Reply with ONLY a JSON object, no prose, no markdown fences. Use this schema and \
+pick values STRICTLY from the listed options for every enum field:
 
 {
   "subject": "<short phrase, e.g. 'great horned owl perched on branch'>",
+  "animal_type": "Mammal" | "Bird" | "Reptile" | "Amphibian" | "Fish" | "Insect" | "Other" | "Unknown",
+  "species": "<best-guess common name, e.g. 'Mallard', 'Western Lowland Gorilla'. Use 'Unknown' if unsure>",
   "eye_focus": "sharp" | "soft" | "not_visible" | "n/a",
   "motion": "still" | "subtle" | "in_motion" | "blurred",
-  "composition": "strong" | "okay" | "weak",
+  "composition": "strong" | "standard" | "weak",
   "lighting": "harsh" | "soft" | "golden" | "low_light" | "backlit" | "overcast" | "mixed",
   "is_silhouette": true | false,
   "technical_issues": [<zero or more of: "out_of_focus","camera_shake","clipped_subject","blown_highlights","heavy_noise","obstructed">],
@@ -32,19 +38,40 @@ and pick values STRICTLY from the listed options for every enum field:
   "notes": "<one short sentence, optional>"
 }
 
-Important rules:
-- Pick exactly one value for each enum (eye_focus, motion, composition, lighting). Do not invent new values.
+SCORING RUBRIC — apply it strictly. The default is mediocre.
+- 1-2: Technically broken. Reject. (Severe blur, clipped subject, obstructed, unrecoverable highlights.)
+- 3-4: Technically passable but unremarkable. Common pose, weak/flat light, redundant within a burst, mundane subject. THIS IS THE MOST COMMON BAND.
+- 5: Average competent shot. Eye reasonably sharp, light okay, but nothing distinctive. Stock-grade at best.
+- 6: Good shot. Slightly above average — nice light OR interesting behavior OR clean composition. Worth keeping.
+- 7: Strong shot. Clean light AND distinctive moment/composition AND would survive editing well. Portfolio candidate AFTER selection.
+- 8: Excellent. Story, behavior, or rare beauty. A pro would print this. Rare in any shoot.
+- 9: Exceptional. Would headline a series. Magazine spread.
+- 10: Once-a-year shot. Magazine cover material. Almost never give this.
+
+HARD RULES (deduct or cap aggressively):
+- Blown highlights that lose detail in the subject: cap artistic_score at 5 unless the rest is extraordinary.
+- Mundane pose (animal perched, sitting, looking at camera) with no behavior, weather, or light interest: cap at 6.
+- Cluttered or distracting background: cap at 6.
+- Soft or missed eye focus on a static animal in good light: cap at 5.
+- Common subject in zoo/captive context with visible enclosure cues: cap at 6.
+
+Assume realistic editing (white balance, exposure, modest crop, light noise reduction) is allowed, but NOT heavy compositing, sky replacement, or highlight reconstruction. If a flaw cannot be fixed by light editing, score as if it stays.
+
+portfolio_potential = artistic_score adjusted for marketability, uniqueness, and edit ceiling. Penalize redundancy with common stock imagery. It should usually be EQUAL TO or LOWER than artistic_score, never meaningfully higher.
+
+Important rules for the schema:
+- Pick exactly one value for each enum (animal_type, eye_focus, motion, composition, lighting). Do not invent new values.
 - "low_light" goes in `lighting`, never in `technical_issues`.
-- `technical_issues` is for image flaws, not artistic choices. A deliberate silhouette is not an "obstructed" or "out_of_focus" image.
-- Score conservatively. Most frames in a burst will be average (4-6). Reserve 9-10 for genuinely exceptional work."""
+- `technical_issues` is for image flaws, not artistic choices. A deliberate silhouette is not "obstructed" or "out_of_focus"."""
 
 
 # Single source of truth for the controlled vocab. The server exposes this
 # to the UI so dropdowns show exactly the values the model can return.
 AI_VOCAB = {
+    "animal_type": ["Mammal", "Bird", "Reptile", "Amphibian", "Fish", "Insect", "Other", "Unknown"],
     "eye_focus": ["sharp", "soft", "not_visible", "n/a"],
     "motion": ["still", "subtle", "in_motion", "blurred"],
-    "composition": ["strong", "okay", "weak"],
+    "composition": ["strong", "standard", "weak"],
     "lighting": ["harsh", "soft", "golden", "low_light", "backlit", "overcast", "mixed"],
     "technical_issues": [
         "out_of_focus", "camera_shake", "clipped_subject",

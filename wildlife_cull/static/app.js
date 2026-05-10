@@ -104,7 +104,7 @@ async function refreshAiVocab() {
     for (const v of values) {
       const opt = document.createElement("option");
       opt.value = v;
-      opt.textContent = v;
+      opt.textContent = pretty(v);
       sel.appendChild(opt);
     }
   }
@@ -122,6 +122,8 @@ function readFilters() {
   }
   const map = {
     "filter-ai-status": "ai_status",
+    "filter-animal-type": "animal_type",
+    "filter-species": "species_contains",
     "filter-eye-focus": "eye_focus",
     "filter-motion": "motion",
     "filter-composition": "composition",
@@ -251,19 +253,21 @@ function renderAiBlock(img) {
     return;
   }
   const a = img.ai || {};
-  const issues = (a.technical_issues || []).join(", ") || "—";
+  const issues = (a.technical_issues || []).map(pretty).join(", ") || "—";
   el.innerHTML = `
     <div class="scores-row">
-      <div class="score-pill"><div class="label">artistic</div><div class="val">${a.artistic_score ?? "?"}</div></div>
-      <div class="score-pill"><div class="label">portfolio</div><div class="val">${a.portfolio_potential ?? "?"}</div></div>
+      <div class="score-pill"><div class="label">Artistic</div><div class="val">${a.artistic_score ?? "?"}</div></div>
+      <div class="score-pill"><div class="label">Portfolio</div><div class="val">${a.portfolio_potential ?? "?"}</div></div>
     </div>
-    <div class="row"><span>subject</span><strong>${esc(a.subject) || "—"}</strong></div>
-    <div class="row"><span>eye focus</span><strong>${esc(a.eye_focus) || "—"}</strong></div>
-    <div class="row"><span>motion</span><strong>${esc(a.motion) || "—"}</strong></div>
-    <div class="row"><span>composition</span><strong>${esc(a.composition) || "—"}</strong></div>
-    <div class="row"><span>lighting</span><strong>${esc(a.lighting) || "—"}</strong></div>
-    <div class="row"><span>silhouette</span><strong>${a.is_silhouette ? "yes" : "no"}</strong></div>
-    <div class="row"><span>issues</span><strong>${esc(issues)}</strong></div>
+    <div class="row"><span>Type</span><strong>${esc(a.animal_type) || "—"}</strong></div>
+    <div class="row"><span>Species</span><strong>${esc(a.species) || "—"}</strong></div>
+    <div class="row"><span>Subject</span><strong>${esc(a.subject) || "—"}</strong></div>
+    <div class="row"><span>Eye focus</span><strong>${esc(pretty(a.eye_focus)) || "—"}</strong></div>
+    <div class="row"><span>Motion</span><strong>${esc(pretty(a.motion)) || "—"}</strong></div>
+    <div class="row"><span>Composition</span><strong>${esc(pretty(a.composition)) || "—"}</strong></div>
+    <div class="row"><span>Lighting</span><strong>${esc(pretty(a.lighting)) || "—"}</strong></div>
+    <div class="row"><span>Silhouette</span><strong>${a.is_silhouette ? "Yes" : "No"}</strong></div>
+    <div class="row"><span>Issues</span><strong>${esc(issues)}</strong></div>
     ${a.notes ? `<div class="notes-line">${esc(a.notes)}</div>` : ""}
   `;
 }
@@ -271,6 +275,11 @@ function renderAiBlock(img) {
 function esc(s) {
   if (s === null || s === undefined) return "";
   return String(s).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[c]);
+}
+
+function pretty(s) {
+  if (s === null || s === undefined || s === "") return "";
+  return String(s).replace(/_/g, " ").replace(/\b([a-z])/g, (_, c) => c.toUpperCase());
 }
 
 function setStars(v) {
@@ -449,12 +458,12 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   for (const id of [
-    "filter-ai-status", "filter-eye-focus", "filter-motion", "filter-composition",
-    "filter-lighting", "filter-silhouette", "filter-issue",
+    "filter-ai-status", "filter-animal-type", "filter-eye-focus", "filter-motion",
+    "filter-composition", "filter-lighting", "filter-silhouette", "filter-issue",
   ]) {
     $("#" + id).onchange = refreshGrid;
   }
-  for (const id of ["filter-subject", "filter-min-artistic", "filter-min-portfolio"]) {
+  for (const id of ["filter-species", "filter-subject", "filter-min-artistic", "filter-min-portfolio"]) {
     let t;
     $("#" + id).oninput = () => {
       clearTimeout(t);
@@ -465,7 +474,8 @@ document.addEventListener("DOMContentLoaded", () => {
     state.filterRating = "";
     $("#filter-rating").value = "";
     for (const id of [
-      "filter-ai-status", "filter-eye-focus", "filter-motion", "filter-composition",
+      "filter-ai-status", "filter-animal-type", "filter-species",
+      "filter-eye-focus", "filter-motion", "filter-composition",
       "filter-lighting", "filter-silhouette", "filter-issue",
       "filter-subject", "filter-min-artistic", "filter-min-portfolio",
     ]) {

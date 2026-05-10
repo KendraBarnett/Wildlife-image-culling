@@ -151,6 +151,8 @@ def api_images(
     composition: Optional[str] = None,
     lighting: Optional[str] = None,
     silhouette: Optional[str] = None,
+    animal_type: Optional[str] = None,
+    species_contains: Optional[str] = None,
     subject_contains: Optional[str] = None,
     has_issue: Optional[str] = None,
     min_artistic: Optional[int] = None,
@@ -189,6 +191,12 @@ def api_images(
     if silhouette in ("yes", "no"):
         where.append("ai_is_silhouette=?")
         params.append(1 if silhouette == "yes" else 0)
+    if animal_type:
+        where.append("ai_animal_type=?")
+        params.append(animal_type)
+    if species_contains:
+        where.append("ai_species LIKE ?")
+        params.append(f"%{species_contains}%")
     if subject_contains:
         where.append("ai_subject LIKE ?")
         params.append(f"%{subject_contains}%")
@@ -206,7 +214,8 @@ def api_images(
         "SELECT id, filename, folder, is_raw, width, height, "
         "ai_status, ai_artistic_score, ai_portfolio_score, "
         "ai_eye_focus, ai_motion, ai_composition, ai_lighting, "
-        "ai_is_silhouette, ai_subject, ai_technical_issues, "
+        "ai_is_silhouette, ai_subject, ai_animal_type, ai_species, "
+        "ai_technical_issues, "
         "user_rating, user_tags, user_notes "
         f"FROM images {where_sql} ORDER BY filename LIMIT ? OFFSET ?"
     )

@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS images (
     ai_lighting TEXT,
     ai_is_silhouette INTEGER,
     ai_subject TEXT,
+    ai_animal_type TEXT,
+    ai_species TEXT,
     ai_technical_issues TEXT,
     ai_analyzed_at REAL,
 
@@ -68,6 +70,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         ("ai_composition", "ALTER TABLE images ADD COLUMN ai_composition TEXT"),
         ("ai_lighting", "ALTER TABLE images ADD COLUMN ai_lighting TEXT"),
         ("ai_technical_issues", "ALTER TABLE images ADD COLUMN ai_technical_issues TEXT"),
+        ("ai_animal_type", "ALTER TABLE images ADD COLUMN ai_animal_type TEXT"),
+        ("ai_species", "ALTER TABLE images ADD COLUMN ai_species TEXT"),
     ]:
         if name not in cols:
             conn.execute(ddl)
@@ -118,6 +122,8 @@ def set_ai_result(conn: sqlite3.Connection, image_id: int, ai: dict, raw_json: s
             ai_lighting=?,
             ai_is_silhouette=?,
             ai_subject=?,
+            ai_animal_type=?,
+            ai_species=?,
             ai_technical_issues=?,
             ai_analyzed_at=?
         WHERE id=?""",
@@ -131,6 +137,8 @@ def set_ai_result(conn: sqlite3.Connection, image_id: int, ai: dict, raw_json: s
             ai.get("lighting"),
             1 if ai.get("is_silhouette") else 0,
             ai.get("subject"),
+            ai.get("animal_type"),
+            ai.get("species"),
             json.dumps(issues),
             ts,
             image_id,
@@ -154,6 +162,8 @@ def reset_ai_for_reanalysis(conn: sqlite3.Connection, image_ids: list[int]) -> i
             ai_lighting=NULL,
             ai_is_silhouette=NULL,
             ai_subject=NULL,
+            ai_animal_type=NULL,
+            ai_species=NULL,
             ai_technical_issues=NULL,
             ai_analyzed_at=NULL
         WHERE id IN ({placeholders})""",
