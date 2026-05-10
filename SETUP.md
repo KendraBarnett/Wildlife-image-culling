@@ -22,7 +22,7 @@ You need:
 
 - A Mac mini with Apple Silicon (M1, M2, M3, or M4). Intel Macs won't work well.
 - At least 16 GB of RAM (you confirmed M4 / M4 Pro 16 GB+ — you're set).
-- About 20 GB of free disk space (the AI models are ~5 GB each).
+- About **40 GB of free disk space** (three vision models at 5–8 GB each, plus a CLIP model, plus your photo previews).
 - A reasonably fast internet connection for the one-time downloads.
 - The Mac mini powered on, signed in, and connected to the same Wi-Fi /
   network as your MacBook (so you can copy-paste commands between them if
@@ -80,7 +80,7 @@ This installs:
 
 Wait until it finishes (a few minutes).
 
-## Step 4 — Start Ollama and download the vision model
+## Step 4 — Start Ollama and download the three vision models
 
 Start the Ollama background service:
 
@@ -88,25 +88,49 @@ Start the Ollama background service:
 brew services start ollama
 ```
 
-Now download the vision model we'll use. This is a ~5 GB download — go grab a
-coffee:
+The app uses **three different vision models** so it can score each photo from
+three different perspectives (a "judges" panel — Editor / NatGeo / Stock).
+Each judge has its own model and persona, and the app combines their scores.
+You only download these once.
+
+Total download: about **18 GB**. Plan on 30–60 minutes depending on your
+internet speed. Run all three in the same Terminal window — each one will
+print a progress bar:
 
 ```
 ollama pull qwen2.5vl:7b
+ollama pull llama3.2-vision:11b
+ollama pull minicpm-v
 ```
 
-When that finishes, test that it works:
+What each one is for:
+
+- **`qwen2.5vl:7b`** (~5 GB) — the **Editor** judge. Harsh technical critic:
+  focus, light, composition, exposure.
+- **`llama3.2-vision:11b`** (~8 GB) — the **NatGeo** judge. Story-driven:
+  behavior, conservation context, sense of place, rarity.
+- **`minicpm-v`** (~5 GB) — the **Stock** judge. Commercial appeal: clean
+  isolation, broad marketability, room for layout.
+
+When all three are done, sanity-check that the first one works:
 
 ```
 ollama run qwen2.5vl:7b "Say hello in one word."
 ```
 
 You should see a one-word reply. Press **Control + D** to exit. If you got a
-reply, the AI is working.
+reply, Ollama is healthy and the models are loaded.
 
-> **If `qwen2.5vl:7b` won't pull**, your Ollama is older. Run
-> `brew upgrade ollama` and try again. As a fallback, `llava:7b` works too —
-> tell me and I'll switch the default.
+> **If any of these won't pull**, your Ollama is probably old. Run
+> `brew upgrade ollama` then try again. The app's health indicator (top right
+> of the browser UI) will tell you exactly which model is missing if it can't
+> find one when you start the server.
+
+> **About RAM:** your Mac mini has 16 GB and each of these models is 5–8 GB.
+> Only **one** model is loaded into RAM at a time; the app processes all your
+> photos with the Editor first, then swaps to NatGeo and processes them all
+> again, then Stock. This is why analysis takes a while — it's three passes,
+> not three parallel runs. You leave it running.
 
 ## Step 5 — Download the project from GitHub onto the Mac mini
 
