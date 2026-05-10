@@ -818,6 +818,31 @@ document.addEventListener("DOMContentLoaded", () => {
     e.target.classList.toggle("active");
   };
   $("#bulk-tag-apply").onclick = applyBulkTags;
+  $("#refresh-sidecars").onclick = async () => {
+    if (!confirm(
+      "Rewrite every image's XMP sidecar from current AI / Claude state?\n\n"
+      + "Fast — no re-analysis. Use this once to backfill the new "
+      + "WC:* AI keywords into existing sidecars so Lightroom can see them."
+    )) return;
+    const btn = $("#refresh-sidecars");
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = "Refreshing…";
+    try {
+      const r = await jpost("/api/admin/refresh-sidecars");
+      let msg = `Wrote ${r.written} of ${r.scanned} sidecars.`;
+      if (r.errors && r.errors.length) {
+        msg += `\n\n${r.errors.length} error(s):\n${r.errors.slice(0, 5).join("\n")}`;
+        if (r.errors.length > 5) msg += `\n…and ${r.errors.length - 5} more.`;
+      }
+      alert(msg);
+    } catch (e) {
+      alert("Refresh failed: " + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
+  };
   $("#clear-previews").onclick = async () => {
     const stats = await jget("/api/admin/preview-stats").catch(() => null);
     const sizeNote = stats ? ` (${stats.file_count} files, ${stats.gb} GB)` : "";

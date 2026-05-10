@@ -84,6 +84,37 @@ def api_preview_stats() -> dict:
     }
 
 
+@app.post("/api/admin/refresh-sidecars")
+def api_refresh_sidecars() -> dict:
+    """Rewrite every image's XMP sidecar from its current DB state.
+
+    Use this once after a schema change or after the AI-tag feature
+    ships: existing images won't have the new WC:* keywords in their
+    sidecars yet, and this is the one-click backfill. For a typical
+    library this is fast (a few ms per file, no model inference)."""
+    written = 0
+    errors: list[str] = []
+    with db.connect() as conn:
+        rows = conn.execute(
+            "SELECT id, path FROM images WHERE path IS NOT NULL"
+        ).fetchall()
+        for row in rows:
+            try:
+                result = xmp.refresh_sidecar(conn, row["id"])
+                if result is not None:
+                    written += 1
+            except Exception as exc:
+                errors.append(f"{row['path']}: {type(exc).__name__}: {exc}")
+                if len(errors) >= 20:
+                    break
+    return {
+        "ok": True,
+        "scanned": len(rows),
+        "written": written,
+        "errors": errors,
+    }
+
+
 @app.post("/api/admin/clear-previews")
 def api_clear_previews() -> dict:
     """Delete every cached preview/thumb file and null out preview_path in
