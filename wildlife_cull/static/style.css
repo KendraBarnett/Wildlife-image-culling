@@ -134,7 +134,18 @@ body.select-mode .card:hover { outline: 2px solid var(--accent); }
 .compare-reason { font-size: 14px; line-height: 1.5; color: var(--fg); }
 .learned-block { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
 .learned-block.learned-disagree-block { border-color: rgba(245, 196, 81, 0.5); background: rgba(245, 196, 81, 0.06); }
-.learned-title { font-size: 10px; letter-spacing: 1px; color: var(--muted); margin-bottom: 6px; }
+.learned-title { font-size: 10px; letter-spacing: 1px; color: var(--muted); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+
+/* Info icon + hover/focus popover — used to explain UI concepts
+   in-place without taking up screen real estate. Pure CSS, no JS. */
+.info-icon { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; cursor: help; outline: none; }
+.info-icon-mark { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--border); color: var(--muted); font-size: 9px; font-family: Georgia, "Times New Roman", serif; font-style: italic; font-weight: 700; line-height: 1; background: var(--panel); transition: all 0.1s ease; }
+.info-icon:hover .info-icon-mark, .info-icon:focus .info-icon-mark { color: var(--fg); border-color: var(--fg); background: var(--panel-2); }
+.info-popover { position: absolute; top: calc(100% + 8px); left: -8px; min-width: 280px; max-width: 380px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45); font-size: 12px; line-height: 1.5; color: var(--fg); text-transform: none; letter-spacing: normal; font-weight: normal; white-space: pre-line; opacity: 0; pointer-events: none; transform: translateY(-4px); transition: opacity 0.12s ease, transform 0.12s ease; z-index: 100; }
+.info-popover strong { color: var(--fg); display: block; margin-bottom: 6px; font-size: 13px; }
+.info-popover em { color: var(--accent); font-style: normal; font-weight: 600; display: block; margin-top: 8px; font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; }
+.info-popover b { color: var(--fg); font-weight: 600; }
+.info-icon:hover .info-popover, .info-icon:focus .info-popover { opacity: 1; pointer-events: auto; transform: translateY(0); }
 .learned-row { display: flex; align-items: baseline; gap: 12px; }
 .learned-verdict { font-weight: 700; font-size: 14px; padding: 2px 8px; border-radius: 4px; }
 .learned-verdict.learned-yes { background: rgba(80, 200, 120, 0.18); color: #6fdb95; border: 1px solid rgba(80, 200, 120, 0.4); }

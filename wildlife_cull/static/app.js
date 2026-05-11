@@ -554,7 +554,21 @@ function renderLearnedBlock(img) {
     ? `<span class="learned-disagree">⚠ disagrees with AI</span>`
     : "";
   return `<div class="learned-block ${disagree ? "learned-disagree-block" : ""}">
-    <div class="learned-title">YOUR PERSONAL MODEL</div>
+    <div class="learned-title">
+      <span>YOUR PERSONAL MODEL</span>
+      <span class="info-icon" tabindex="0" aria-label="How the personal model works">
+        <span class="info-icon-mark">i</span>
+        <span class="info-popover">
+          <strong>Personal model</strong> — a tiny classifier that learns your keep/cull taste from your own labels, so you don't depend only on the AI's verbal judgment.
+
+          <em>How it works:</em> every image gets a CLIP embedding (a 512-number visual fingerprint) at ingest. Your tags (Keep / Portfolio / Reject), star ratings (≥4 = keep, ≤2 = cull), and explicit AI corrections become training labels. A logistic-regression classifier learns to predict your verdict from the embedding. It runs in milliseconds and recognizes the visual neighborhood — backlit silhouettes vs clean portraits — even when a language model can't articulate the rule.
+
+          <em>To train:</em> tag and rate at least 10 images (3+ keep AND 3+ cull). Then click <b>Tools → Train personal model</b>. Re-train any time you've added another batch of corrections.
+
+          <em>Disagrees with AI</em> highlights cases where the prompted AI and your personal model differ. Those are the highest-value images to look at and correct — each fix sharpens both signals.
+        </span>
+      </span>
+    </div>
     <div class="learned-row">
       <span class="learned-verdict ${learnedClass}">${learnedLabel}</span>
       <span class="learned-conf">${pct}% confidence</span>
