@@ -36,13 +36,14 @@ pip install -e .
 mkdir -p data data/previews
 
 echo
-echo "Pulling vision models for the two judges (this is a one-time download,"
-echo "about 13 GB total). Each model is used by a different judge persona:"
-echo "  - llama3.2-vision  (NatGeo judge — story / editorial)"
-echo "  - minicpm-v        (Stock judge — commercial appeal)"
+echo "Pulling vision models (one-time download, ~20 GB total):"
+echo "  - llama3.2-vision:11b   default for triage (best with the long structured prompt)"
+echo "  - qwen2.5vl:7b          alternative triage / used for the Compare-2-images feature"
+echo "  - minicpm-v             smallest, fastest fallback"
+echo "All three are downloaded so you can switch via WC_TRIAGE_MODEL in run.sh."
 echo
 
-for model in "llama3.2-vision:11b" "minicpm-v"; do
+for model in "llama3.2-vision:11b" "qwen2.5vl:7b" "minicpm-v"; do
   echo "Pulling $model ..."
   ollama pull "$model" || {
     echo "WARNING: failed to pull $model. You can re-run this script or run 'ollama pull $model' manually."

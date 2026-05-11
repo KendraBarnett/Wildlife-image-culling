@@ -665,7 +665,7 @@ function renderAiBlock(img) {
     return img.ai || {};
   })();
   const issues = (a.technical_issues || []).map(pretty).join(", ") || "—";
-  const triageModel = (judges[0] && judges[0].model) || "qwen2.5vl:7b";
+  const triageModel = (judges[0] && judges[0].model) || "(unknown model)";
 
   const keepBadge = a.keep === "yes"
     ? `<span class="keep-badge keep-yes">KEEP</span>`
