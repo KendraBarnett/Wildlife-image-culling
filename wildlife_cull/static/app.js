@@ -114,6 +114,10 @@ async function refreshHealth() {
       const trained = h.feedback_active
         ? ` · trained on ${h.feedback_active} of your corrections`
         : (h.feedback_corrections === 0 ? " · no corrections yet" : "");
+      const cls = h.classifier || {};
+      const learned = cls.ready
+        ? ` · personal model: ${cls.labeled_count} labels`
+        : (cls.labeled_count > 0 ? ` · ${cls.labeled_count} labels collected (need ${cls.min_required} to train)` : "");
       const t = h.worker_last_timing;
       const timing = t
         ? ` · last: ${t.total_secs}s (enc ${t.image_encode_secs}s, prompt ${t.prompt_eval_secs ?? "?"}s, gen ${t.eval_secs ?? "?"}s)`
@@ -121,7 +125,7 @@ async function refreshHealth() {
       const inflight = h.worker_in_flight
         ? ` · working on ${h.worker_in_flight.filename} (${Math.round(Date.now()/1000 - h.worker_in_flight.started_at)}s)`
         : "";
-      el.textContent = `ready · ${h.vision_model}${trained}${inflight}${timing}`;
+      el.textContent = `ready · ${h.vision_model}${trained}${learned}${inflight}${timing}`;
       el.className = "health ok";
     } else {
       el.textContent = h.ollama_issue || "issue";
@@ -293,6 +297,7 @@ function readFilters() {
     "filter-keep": "keep",
     "filter-in-focus": "in_focus",
     "filter-scored": "scored",
+    "filter-learned": "learned",
     "filter-burst": "burst_only",
     "filter-subject": "subject_contains",
     "filter-min-technical": "min_technical",
@@ -531,6 +536,33 @@ function formatExposureComp(v) {
   return (v > 0 ? "+" : "") + v.toFixed(1).replace(/\.0$/, "") + " EV";
 }
 
+function renderLearnedBlock(img) {
+  // Personal-model verdict block — shows only when the classifier has
+  // run on this image. Surfaces both the verdict AND its confidence so
+  // the photographer can see when the model is sure vs hedging.
+  // Special highlight when the personal model disagrees with the AI's
+  // keep field — those are the highest-value images to look at.
+  const learned = img.learned_keep;
+  const conf = img.learned_keep_confidence;
+  if (!learned || conf == null) return "";
+  const aiKeep = img.ai_keep;
+  const pct = Math.round(conf * 100);
+  const learnedLabel = learned === "yes" ? "KEEP" : "CULL";
+  const learnedClass = learned === "yes" ? "learned-yes" : "learned-no";
+  const disagree = aiKeep && aiKeep !== learned && aiKeep !== "maybe";
+  const flag = disagree
+    ? `<span class="learned-disagree">⚠ disagrees with AI</span>`
+    : "";
+  return `<div class="learned-block ${disagree ? "learned-disagree-block" : ""}">
+    <div class="learned-title">YOUR PERSONAL MODEL</div>
+    <div class="learned-row">
+      <span class="learned-verdict ${learnedClass}">${learnedLabel}</span>
+      <span class="learned-conf">${pct}% confidence</span>
+      ${flag}
+    </div>
+  </div>`;
+}
+
 function renderExifBlock(img) {
   // Only render the section if we have at least one usable EXIF field.
   const captured = formatCaptureTime(img.capture_time);
@@ -690,12 +722,14 @@ function renderAiBlock(img) {
       </div>`;
 
   const exifBlock = renderExifBlock(img);
+  const learnedBlock = renderLearnedBlock(img);
 
   el.innerHTML = `
     <div class="triage-header">
       <div class="triage-keep">${keepBadge}</div>
       <div class="triage-model muted">${esc(triageModel)}</div>
     </div>
+    ${learnedBlock}
     ${claudeBlock}
     ${exifBlock}
     ${img.burst_id ? `<div class="row"><span>Burst</span><strong>burst ${img.burst_id} · ${img.burst_rank ? `rank ${img.burst_rank}` : esc(pretty(img.burst_role || ""))}${img.burst_role === "best" ? " ★" : ""}</strong></div>` : ""}
@@ -920,7 +954,7 @@ document.addEventListener("DOMContentLoaded", () => {
   for (const id of [
     "filter-ai-status", "filter-animal-type", "filter-eye-focus", "filter-motion",
     "filter-composition", "filter-lighting", "filter-silhouette", "filter-issue",
-    "filter-feedback", "filter-keep", "filter-in-focus", "filter-scored", "filter-burst",
+    "filter-feedback", "filter-keep", "filter-in-focus", "filter-scored", "filter-learned", "filter-burst",
   ]) {
     const el = $("#" + id);
     if (el) el.onchange = refreshGrid;
@@ -972,7 +1006,7 @@ document.addEventListener("DOMContentLoaded", () => {
       "filter-ai-status", "filter-animal-type", "filter-species",
       "filter-eye-focus", "filter-motion", "filter-composition",
       "filter-lighting", "filter-silhouette", "filter-issue", "filter-feedback",
-      "filter-keep", "filter-in-focus", "filter-scored", "filter-burst",
+      "filter-keep", "filter-in-focus", "filter-scored", "filter-learned", "filter-burst",
       "filter-subject", "filter-min-technical", "filter-min-aesthetic",
     ]) {
       const el = $("#" + id);
@@ -1042,6 +1076,34 @@ document.addEventListener("DOMContentLoaded", () => {
       refreshGrid();
     } catch (e) {
       alert("Backfill failed: " + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
+  };
+  $("#train-classifier").onclick = async () => {
+    const btn = $("#train-classifier");
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = "Training…";
+    try {
+      const r = await jpost("/api/classifier/train", {});
+      if (!r.ok) {
+        alert(`Couldn't train yet:\n\n${r.error}`);
+      } else {
+        alert(
+          `Personal model trained on ${r.labeled_count} of your labels `
+          + `(${r.labeled_keep} keep / ${r.labeled_cull} cull).\n\n`
+          + `Training accuracy: ${(r.train_accuracy * 100).toFixed(1)}%\n`
+          + `Predicted ${r.predicted} images in ${r.elapsed_secs}s.\n\n`
+          + `Open any image to see your model's verdict alongside the AI's. `
+          + `Re-train after adding more corrections to keep it sharp.`
+        );
+        refreshGrid();
+        refreshHealth();
+      }
+    } catch (e) {
+      alert("Train failed: " + e.message);
     } finally {
       btn.disabled = false;
       btn.textContent = orig;

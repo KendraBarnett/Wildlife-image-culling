@@ -119,6 +119,13 @@
       <option value="yes">Scored</option>
       <option value="no">Not scored</option>
     </select>
+    <label>Personal model:</label>
+    <select id="filter-learned">
+      <option value="">Any</option>
+      <option value="yes">Says keep</option>
+      <option value="no">Says cull</option>
+      <option value="disagree">Disagrees with AI</option>
+    </select>
     <label>Bursts:</label>
     <select id="filter-burst">
       <option value="">All</option>
@@ -169,6 +176,7 @@
         <div class="tools-menu-panel">
           <button id="reanalyze-errored" class="secondary" title="Re-queue every image whose AI analysis errored out.">Re-analyze all errored</button>
           <button id="recheck-folders" class="secondary" title="Probe every folder's path on disk. Use after plugging in an external drive.">Recheck folders</button>
+          <button id="train-classifier" class="secondary" title="Train a personal keep/cull classifier on your tags + ratings + corrections, then run it across every image. Re-train any time after adding more labels.">Train personal model</button>
           <button id="refresh-sidecars" class="secondary" title="Rewrite every image's XMP sidecar from current AI/Claude state. Fast — no re-analysis.">Refresh all sidecars</button>
           <button id="backfill-capture-times" class="secondary" title="Pull EXIF for every image that doesn't have it yet — capture time, camera, lens, focal length, ISO, aperture, shutter, exposure comp.">Backfill EXIF</button>
           <button id="drop-folder-previews" class="secondary" title="Delete previews for THIS folder only. Reclaims disk space on completed shoots without affecting other folders.">Drop this folder's previews</button>

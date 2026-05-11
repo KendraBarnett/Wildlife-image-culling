@@ -132,6 +132,15 @@ body.select-mode .card:hover { outline: 2px solid var(--accent); }
 .compare-side.loser { opacity: 0.7; }
 .compare-result { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px; }
 .compare-reason { font-size: 14px; line-height: 1.5; color: var(--fg); }
+.learned-block { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
+.learned-block.learned-disagree-block { border-color: rgba(245, 196, 81, 0.5); background: rgba(245, 196, 81, 0.06); }
+.learned-title { font-size: 10px; letter-spacing: 1px; color: var(--muted); margin-bottom: 6px; }
+.learned-row { display: flex; align-items: baseline; gap: 12px; }
+.learned-verdict { font-weight: 700; font-size: 14px; padding: 2px 8px; border-radius: 4px; }
+.learned-verdict.learned-yes { background: rgba(80, 200, 120, 0.18); color: #6fdb95; border: 1px solid rgba(80, 200, 120, 0.4); }
+.learned-verdict.learned-no { background: rgba(255, 100, 100, 0.15); color: #ff8a8a; border: 1px solid rgba(255, 100, 100, 0.4); }
+.learned-conf { font-size: 12px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, monospace; }
+.learned-disagree { font-size: 11px; color: #f5c451; font-weight: 600; margin-left: auto; }
 .exif-block { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
 .exif-title { font-size: 10px; letter-spacing: 1px; color: var(--muted); margin-bottom: 6px; }
 .exif-settings { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 12px; }

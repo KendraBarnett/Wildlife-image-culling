@@ -61,6 +61,8 @@ CREATE TABLE IF NOT EXISTS images (
     claude_output_tokens INTEGER,
     claude_cache_read_tokens INTEGER,
     claude_cost_usd REAL,
+    learned_keep TEXT,
+    learned_keep_confidence REAL,
 
     embedding BLOB,
     embedding_model TEXT,
@@ -141,6 +143,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         ("exif_aperture", "ALTER TABLE images ADD COLUMN exif_aperture REAL"),
         ("exif_shutter", "ALTER TABLE images ADD COLUMN exif_shutter TEXT"),
         ("exif_exposure_comp", "ALTER TABLE images ADD COLUMN exif_exposure_comp REAL"),
+        ("learned_keep", "ALTER TABLE images ADD COLUMN learned_keep TEXT"),
+        ("learned_keep_confidence", "ALTER TABLE images ADD COLUMN learned_keep_confidence REAL"),
         ("burst_rank", "ALTER TABLE images ADD COLUMN burst_rank INTEGER"),
     ]:
         if name not in cols:

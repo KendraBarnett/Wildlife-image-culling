@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import ai, bursts, db, ingest, xmp
+from . import ai, bursts, classifier, db, ingest, xmp
 from . import claude as claude_mod
 from .config import SERVER_HOST, SERVER_PORT, VISION_MODEL
 from .worker import BackgroundWorker
@@ -62,6 +62,7 @@ def health() -> dict:
         "worker_in_flight": worker.in_flight,
         "feedback_corrections": fb_count,
         "feedback_active": min(fb_count, 5),
+        "classifier": classifier.status(),
         "claude": {**claude_mod.usage_summary(), "bulk": claude_mod.bulk_scorer.status()},
     }
 
@@ -90,6 +91,27 @@ def api_preview_stats() -> dict:
         "mb": round(total_bytes / (1024 * 1024), 1),
         "gb": round(total_bytes / (1024 * 1024 * 1024), 2),
     }
+
+
+@app.get("/api/classifier/status")
+def api_classifier_status() -> dict:
+    """How many labeled examples, is a model trained, when. Used by
+    the UI to decide whether to enable the 'Train personal model'
+    button and to show the current state in the header."""
+    return classifier.status()
+
+
+@app.post("/api/classifier/train")
+def api_classifier_train() -> dict:
+    """Train the personal classifier on current labels, then run
+    predict_all so every embedded image gets a fresh learned_keep
+    verdict. Synchronous — training is milliseconds, prediction across
+    a 10k library is a couple seconds at most."""
+    result = classifier.train()
+    if not result.get("ok"):
+        return result
+    pred = classifier.predict_all()
+    return {**result, "predicted": pred.get("predicted", 0)}
 
 
 @app.post("/api/admin/refresh-sidecars")
@@ -436,6 +458,7 @@ def api_images(
     keep: Optional[str] = None,
     in_focus: Optional[str] = None,
     scored: Optional[str] = None,
+    learned: Optional[str] = None,
     min_technical: Optional[float] = None,
     min_aesthetic: Optional[float] = None,
     limit: int = Query(default=500, le=2000),
@@ -509,6 +532,16 @@ def api_images(
         where.append("claude_scored_at IS NOT NULL")
     elif scored == "no":
         where.append("claude_scored_at IS NULL")
+    if learned == "yes":
+        where.append("learned_keep='yes'")
+    elif learned == "no":
+        where.append("learned_keep='no'")
+    elif learned == "disagree":
+        # AI vs personal model say different things — high-value review images.
+        where.append(
+            "learned_keep IS NOT NULL AND ai_keep IS NOT NULL "
+            "AND learned_keep != ai_keep AND ai_keep != 'maybe'"
+        )
     if min_technical is not None:
         where.append("claude_technical_score >= ?")
         params.append(min_technical)
@@ -527,6 +560,7 @@ def api_images(
         "claude_scored_at, claude_cost_usd, "
         "capture_time, exif_camera, exif_lens, exif_focal_length, "
         "exif_iso, exif_aperture, exif_shutter, exif_exposure_comp, "
+        "learned_keep, learned_keep_confidence, "
         "user_rating, user_tags, user_notes "
         f"FROM images {where_sql} ORDER BY filename LIMIT ? OFFSET ?"
     )
