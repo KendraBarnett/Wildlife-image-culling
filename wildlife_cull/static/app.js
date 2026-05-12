@@ -559,13 +559,15 @@ function renderLearnedBlock(img) {
       <span class="info-icon" tabindex="0" aria-label="How the personal model works">
         <span class="info-icon-mark">i</span>
         <span class="info-popover">
-          <strong>Personal model</strong> — a tiny classifier that learns your keep/cull taste from your own labels, so you don't depend only on the AI's verbal judgment.
+          <strong>Personal model</strong> — a tiny classifier that learns your keep/cull taste from your own labels, then predicts every other image based on every signal we have.
 
-          <em>How it works:</em> every image gets a CLIP embedding (a 512-number visual fingerprint) at ingest. Your tags (Keep / Portfolio / Reject), star ratings (≥4 = keep, ≤2 = cull), and explicit AI corrections become training labels. A logistic-regression classifier learns to predict your verdict from the embedding. It runs in milliseconds and recognizes the visual neighborhood — backlit silhouettes vs clean portraits — even when a language model can't articulate the rule.
+          <em>Features it sees per image:</em> the CLIP visual fingerprint (512 dims — captures backlit-vs-front-lit, etc.), the classical sharpness score, all of the AI's structured verdicts (keep, eye focus, motion, composition, lighting, silhouette, issues), the EXIF settings (ISO, aperture, shutter, focal length), and the Claude technical/aesthetic scores when present. ~550 features total — far richer than just the embedding.
 
-          <em>To train:</em> tag and rate at least 10 images (3+ keep AND 3+ cull). Then click <b>Tools → Train personal model</b>. Re-train any time you've added another batch of corrections.
+          <em>How training works:</em> tags (Keep / Portfolio / Reject), star ratings (≥4 = keep, ≤2 = cull), and explicit AI corrections become labels. Logistic regression learns to predict your verdict from the feature vector. Trains in milliseconds, predicts across 10k images in seconds.
 
-          <em>Disagrees with AI</em> highlights cases where the prompted AI and your personal model differ. Those are the highest-value images to look at and correct — each fix sharpens both signals.
+          <em>To train:</em> label at least 10 images (3+ keep AND 3+ cull). Click <b>Tools → Train personal model</b>. Re-train any time you've added more corrections.
+
+          <em>Disagrees with AI</em> highlights cases where the prompted LLM and your personal model differ. Those are the highest-value review images — each fix sharpens the next batch of predictions.
         </span>
       </span>
     </div>
