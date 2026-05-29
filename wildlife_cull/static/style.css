@@ -152,6 +152,10 @@ body.select-mode .card:hover { outline: 2px solid var(--accent); }
 .learned-verdict.learned-no { background: rgba(255, 100, 100, 0.15); color: #ff8a8a; border: 1px solid rgba(255, 100, 100, 0.4); }
 .learned-conf { font-size: 12px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, monospace; }
 .learned-disagree { font-size: 11px; color: #f5c451; font-weight: 600; margin-left: auto; }
+.corrected-mark { color: #6fdb95; font-weight: 700; font-size: 12px; margin-left: 4px; cursor: help; }
+.corrections-applied-banner { margin-top: 10px; padding: 8px 10px; background: rgba(80, 200, 120, 0.10); border: 1px solid rgba(80, 200, 120, 0.35); border-radius: 4px; color: #6fdb95; font-size: 11px; font-style: italic; }
+.fb-status.fb-status-detailed { background: rgba(80, 200, 120, 0.08); border: 1px solid rgba(80, 200, 120, 0.35); border-radius: 4px; padding: 8px 10px; font-size: 12px; line-height: 1.6; color: #6fdb95; }
+.fb-status.fb-status-detailed b { color: #6fdb95; }
 .exif-block { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
 .exif-title { font-size: 10px; letter-spacing: 1px; color: var(--muted); margin-bottom: 6px; }
 .exif-settings { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 12px; }

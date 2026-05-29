@@ -618,6 +618,45 @@ function getPrimaryAi(img) {
   return img.ai || {};
 }
 
+function getEffectiveAi(img) {
+  // The 'effective' verdict shown in the main modal view: AI's output
+  // OVERLAID with the user's corrections. If the user has corrected a
+  // field, their truth is what gets displayed. This stops the modal
+  // from confidently showing wrong AI calls after the user has flagged
+  // them — the user wants to see THEIR truth as the primary signal.
+  const ai = getPrimaryAi(img);
+  const fb = img.ai_feedback;
+  if (!fb) return { ...ai, _corrected_fields: [] };
+
+  const merged = { ...ai };
+  const correctedFields = [];
+
+  const fields = [
+    "keep", "in_focus", "eye_focus", "motion", "composition",
+    "lighting", "animal_type", "species", "subject",
+  ];
+  for (const k of fields) {
+    if (fb[k] !== undefined && fb[k] !== null && fb[k] !== "") {
+      merged[k] = fb[k];
+      correctedFields.push(k);
+    }
+  }
+  if (typeof fb.is_silhouette === "boolean") {
+    merged.is_silhouette = fb.is_silhouette;
+    correctedFields.push("is_silhouette");
+  }
+  if (Array.isArray(fb.technical_issues)) {
+    merged.technical_issues = fb.technical_issues;
+    correctedFields.push("technical_issues");
+  }
+  if (fb.note) {
+    merged.notes = fb.note;
+    correctedFields.push("notes");
+  }
+  merged._corrected_fields = correctedFields;
+  return merged;
+}
+
 function renderFeedback(img) {
   const fb = img.ai_feedback || null;
   const ai = getPrimaryAi(img);
@@ -705,22 +744,23 @@ function renderAiBlock(img) {
     return;
   }
 
-  const a = (() => {
-    const primary = judges.find((j) => j.primary) || judges[0];
-    if (primary && judgeData[primary.name] && judgeData[primary.name].result) {
-      return judgeData[primary.name].result;
-    }
-    return img.ai || {};
-  })();
+  // Effective verdict = AI + user corrections overlaid. When the user
+  // has corrected fields, those values become the primary display so
+  // the modal shows their truth, not a wrong AI call.
+  const a = getEffectiveAi(img);
+  const corrected = new Set(a._corrected_fields || []);
+  const hasCorrections = corrected.size > 0;
+  const wasCorrected = (field) => corrected.has(field) ? ' <span class="corrected-mark" title="You corrected this field">✎</span>' : "";
   const issues = (a.technical_issues || []).map(pretty).join(", ") || "—";
   const triageModel = (judges[0] && judges[0].model) || "(unknown model)";
 
+  const keepSuffix = corrected.has("keep") ? ' <span class="corrected-mark" title="You corrected this">✎</span>' : "";
   const keepBadge = a.keep === "yes"
-    ? `<span class="keep-badge keep-yes">KEEP</span>`
+    ? `<span class="keep-badge keep-yes">KEEP${keepSuffix}</span>`
     : a.keep === "maybe"
-    ? `<span class="keep-badge keep-maybe">MAYBE — REVIEW</span>`
+    ? `<span class="keep-badge keep-maybe">MAYBE — REVIEW${keepSuffix}</span>`
     : a.keep === "no"
-    ? `<span class="keep-badge keep-no">DON'T KEEP</span>`
+    ? `<span class="keep-badge keep-no">DON'T KEEP${keepSuffix}</span>`
     : `<span class="keep-badge keep-unknown">—</span>`;
 
   const claudeBlock = (img.claude_technical_score != null || img.claude_aesthetic_score != null)
@@ -751,15 +791,16 @@ function renderAiBlock(img) {
     ${img.burst_id ? `<div class="row"><span>Burst</span><strong>burst ${img.burst_id} · ${img.burst_rank ? `rank ${img.burst_rank}` : esc(pretty(img.burst_role || ""))}${img.burst_role === "best" ? " ★" : ""}</strong></div>` : ""}
     <div class="row"><span>Type</span><strong>${esc(a.animal_type) || "—"}</strong></div>
     <div class="row"><span>Species</span><strong>${esc(a.species) || "—"}</strong></div>
-    <div class="row"><span>Subject</span><strong>${esc(a.subject) || "—"}</strong></div>
-    <div class="row"><span>In focus</span><strong>${a.in_focus === "yes" ? "Yes" : a.in_focus === "no" ? "No" : a.in_focus === "unsure" ? "Unsure" : "—"}</strong></div>
-    <div class="row"><span>Eye focus</span><strong>${esc(pretty(a.eye_focus)) || "—"}</strong></div>
-    <div class="row"><span>Motion</span><strong>${esc(pretty(a.motion)) || "—"}</strong></div>
-    <div class="row"><span>Composition</span><strong>${esc(pretty(a.composition)) || "—"}</strong></div>
-    <div class="row"><span>Lighting</span><strong>${esc(pretty(a.lighting)) || "—"}</strong></div>
-    <div class="row"><span>Silhouette</span><strong>${a.is_silhouette ? "Yes" : "No"}</strong></div>
-    <div class="row"><span>Issues</span><strong>${esc(issues)}</strong></div>
-    ${a.notes ? `<div class="notes-line">${esc(a.notes)}</div>` : ""}
+    <div class="row"><span>Subject</span><strong>${esc(a.subject) || "—"}${wasCorrected("subject")}</strong></div>
+    <div class="row"><span>In focus</span><strong>${a.in_focus === "yes" ? "Yes" : a.in_focus === "no" ? "No" : a.in_focus === "unsure" ? "Unsure" : "—"}${wasCorrected("in_focus")}</strong></div>
+    <div class="row"><span>Eye focus</span><strong>${esc(pretty(a.eye_focus)) || "—"}${wasCorrected("eye_focus")}</strong></div>
+    <div class="row"><span>Motion</span><strong>${esc(pretty(a.motion)) || "—"}${wasCorrected("motion")}</strong></div>
+    <div class="row"><span>Composition</span><strong>${esc(pretty(a.composition)) || "—"}${wasCorrected("composition")}</strong></div>
+    <div class="row"><span>Lighting</span><strong>${esc(pretty(a.lighting)) || "—"}${wasCorrected("lighting")}</strong></div>
+    <div class="row"><span>Silhouette</span><strong>${a.is_silhouette ? "Yes" : "No"}${wasCorrected("is_silhouette")}</strong></div>
+    <div class="row"><span>Issues</span><strong>${esc(issues)}${wasCorrected("technical_issues")}</strong></div>
+    ${a.notes ? `<div class="notes-line">${esc(a.notes)}${wasCorrected("notes")}</div>` : ""}
+    ${hasCorrections ? `<div class="corrections-applied-banner">✓ Showing your corrections (${corrected.size} field${corrected.size === 1 ? "" : "s"}). These values are what's saved to the XMP sidecar and shown in Lightroom.</div>` : ""}
   `;
 }
 
@@ -1256,14 +1297,27 @@ document.addEventListener("DOMContentLoaded", () => {
     if (note) body.note = note;
     try {
       const r = await jpost(`/api/image/${id}/feedback`, body);
-      $("#fb-status").textContent = "Saved.";
-      $("#fb-status").className = "fb-status ok";
       state.current.ai_feedback = r.feedback;
-      renderFeedback(state.current);
       const idx = state.images.findIndex((x) => x.id === id);
       if (idx >= 0) state.images[idx].ai_feedback = r.feedback;
+      // Explicit, specific confirmation — the user wanted proof this
+      // correction is actually being used. Tell them exactly what's
+      // happening: the modal now shows their values, the XMP sidecar
+      // got rewritten, AND the correction is feeding into the prompt.
+      const changedCount = Object.keys(body).filter(k => k !== "marked_wrong" && k !== "note").length;
+      const noteText = body.note ? " + your written note" : "";
+      $("#fb-status").innerHTML = `
+        ✓ Saved. <b>${changedCount} field${changedCount === 1 ? "" : "s"} corrected</b>${noteText}.<br>
+        • The modal now shows your truth as the primary verdict (look for the ✎ marks).<br>
+        • The XMP sidecar has been rewritten with your values — Lightroom will see them.<br>
+        • This correction is now an example in the AI's prompt for future analyses.
+      `;
+      $("#fb-status").className = "fb-status ok fb-status-detailed";
+      renderAiBlock(state.current);
+      renderFeedback(state.current);
       renderGrid();
       refreshStats();
+      refreshHealth();
     } catch (e) {
       $("#fb-status").textContent = "Save failed: " + e.message;
       $("#fb-status").className = "fb-status bad";
