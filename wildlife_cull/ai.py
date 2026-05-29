@@ -21,6 +21,13 @@ images and let everything else through. A second, more capable model (Claude) do
 real quality scoring later — only on what you pass through. You are the coarse
 filter, not the judge.
 
+THE #1 FAILURE MODE TO AVOID: do NOT copy text from this prompt into your output.
+The animal, scene, and details in your `subject`, `species`, and `notes` fields
+MUST come from the actual image you are looking at right now. If this prompt
+mentions a species or a phrase as an example, that is a category label — not
+text to repeat. If the image is a raccoon, the answer is raccoon, even if you
+recently saw a tern. Look at the image FIRST, then write what YOU see.
+
 YOUR BIAS: keep more than you cull. The photographer would much rather glance at a
 mediocre photo for half a second than lose a good one forever. False culls are
 EXPENSIVE. False keeps are CHEAP — Claude catches them downstream.
@@ -164,37 +171,55 @@ INTERNAL CONSISTENCY (quick check before you return)
   flaws.
 
 ============================================================
-CALIBRATION
+CRITICAL: DESCRIBE THIS SPECIFIC IMAGE.
 ============================================================
 
-Mostly-black frame of a dark bird, only beak edge visible
-   → keep = "maybe"   (could be intentional low-key — let the human see it)
+The `subject`, `species`, and `notes` fields MUST describe THE IMAGE
+YOU ARE LOOKING AT RIGHT NOW. They must not echo, paraphrase, or copy
+ANY phrase from this prompt, including from the categories below.
+If the image is a raccoon, say raccoon — even if this prompt happens
+to mention an Inca tern as a category. If you find yourself about to
+write something that appears in this prompt verbatim, stop and look at
+the image again. The phrase "Inca tern with fish in beak" exists in
+this prompt as a category label, not as something to write in a real
+analysis. Your output describes ONE specific image — the one attached.
 
-Inca tern in profile, dark body, sharp-looking head, beak open with fish,
-heavily blurred soft background
-   → keep = "yes"     (this is a textbook wildlife shot — DO NOT cull)
+============================================================
+CALIBRATION (verdict patterns only — do not copy these phrases)
+============================================================
 
-Snow leopard mid-yawn, sharp head, mottled background
-   → keep = "yes"
+These are CATEGORIES of image, not descriptions you should reuse.
+For each category, the photographer's verdict is shown so you know
+how to map your own observations to keep/maybe/no. Your `notes` and
+`subject` must describe what YOU see in the actual image, not the
+category label.
 
-Red panda peeking from foliage, face visible
-   → keep = "yes"
+  Category A: clean, visible subject, sharp on the head/eye
+              → keep = "yes"   (usable wildlife portrait, even of a common animal)
 
-Peacock close-up where most of the frame is feathers and you can barely see
-the bird's head
-   → keep = "maybe"
+  Category B: subject is identifiable AND in focus AND well-lit
+              but the moment is ordinary
+              → keep = "yes"   (still usable; "yes" doesn't need a wow moment)
 
-Bird at the edge of the frame with head cropped off, nothing else happening
-   → keep = "no" (clipped_subject, no behaviour to justify it)
+  Category C: most of the frame is feathers / fur / body texture,
+              with the animal's head NOT visible
+              → keep = "maybe" (texture study; photographer decides)
 
-Entire image is a directional smear, can't tell what the animal is
-   → keep = "no" (camera_shake / out_of_focus)
+  Category D: backlit or low-key with the body in shadow but a clear
+              recognisable shape
+              → keep = "maybe" (could be intentional silhouette)
 
-Tiny speck of a bird in a huge empty sky
-   → keep = "no" (subject_too_small)
+  Category E: the whole frame is a directional motion smear, or the
+              subject is so out of focus you can't read details
+              → keep = "no"    (camera_shake / out_of_focus — actually visible)
 
-Backlit perched tern, recognisable shape, no eye visible
-   → keep = "maybe" (could be the intended silhouette shot)
+  Category F: subject is a speck in a huge empty frame, or the animal's
+              head is cut off at the edge with nothing else going on
+              → keep = "no"    (subject_too_small / clipped_subject)
+
+  Category G: frame is mostly black/white/empty sky/ground with no
+              animal in it
+              → keep = "no"
 
 REMEMBER: you are a filter, not a judge. Pass the borderline ones through. The
 human and Claude will sort them out."""
@@ -238,9 +263,9 @@ TRIAGE_OUTPUT_SCHEMA = {
         "is_silhouette", "technical_issues", "keep", "notes",
     ],
     "properties": {
-        "subject": {"type": "string", "minLength": 3},
+        "subject": {"type": "string"},
         "animal_type": {"type": "string", "enum": AI_VOCAB["animal_type"]},
-        "species": {"type": "string", "minLength": 3},
+        "species": {"type": "string"},
         "in_focus": {"type": "string", "enum": AI_VOCAB["in_focus"]},
         "eye_focus": {"type": "string", "enum": AI_VOCAB["eye_focus"]},
         "motion": {"type": "string", "enum": AI_VOCAB["motion"]},
@@ -252,7 +277,7 @@ TRIAGE_OUTPUT_SCHEMA = {
             "items": {"type": "string", "enum": AI_VOCAB["technical_issues"]},
         },
         "keep": {"type": "string", "enum": AI_VOCAB["keep"]},
-        "notes": {"type": "string", "minLength": 30},
+        "notes": {"type": "string"},
     },
 }
 
