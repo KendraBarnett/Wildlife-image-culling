@@ -80,11 +80,32 @@ def _ai_label_for(field: str, value: str) -> Optional[str]:
     return None
 
 
+def _effective_keep(row, fb) -> Optional[str]:
+    """Precedence: user correction > personal classifier > LLM verdict.
+    The personal classifier (when trained and has predicted this image)
+    is more reliable than the local vision LLM for the keep decision,
+    so it gets priority over ai_keep. Low-confidence predictions
+    (35-65%) become 'maybe' so the photographer reviews them."""
+    if fb.get("keep") in ("yes", "maybe", "no"):
+        return fb["keep"]
+    learned = _get(row, "learned_keep")
+    if learned in ("yes", "no"):
+        conf = _get(row, "learned_keep_confidence")
+        try:
+            c = float(conf) if conf is not None else None
+        except (TypeError, ValueError):
+            c = None
+        if c is not None and 0.35 < c < 0.65:
+            return "maybe"
+        return learned
+    return _get(row, "ai_keep")
+
+
 def compute_ai_tags(row, feedback: Optional[dict] = None) -> list[str]:
     """Return the prefixed AI tag list reflecting the row's current state.
-    The user's feedback (corrections) wins over the AI's stored value for
-    every overlapping field — the cull-decision tag follows the user's
-    truth, not the AI's first guess."""
+    The user's feedback (corrections) wins over the personal classifier,
+    which wins over the LLM's verdict. The cull-decision tag in the XMP
+    sidecar follows whatever signal is most authoritative for this image."""
     fb = feedback or {}
 
     def effective(field: str) -> Optional[object]:
@@ -94,7 +115,16 @@ def compute_ai_tags(row, feedback: Optional[dict] = None) -> list[str]:
 
     tags: list[str] = []
 
-    for field in ("keep", "in_focus", "eye_focus", "motion", "composition",
+    # Keep tag follows the user → classifier → LLM precedence chain.
+    keep_val = _effective_keep(row, fb)
+    if isinstance(keep_val, str):
+        label = _ai_label_for("keep", keep_val)
+        if label:
+            tags.append(AI_TAG_PREFIX + label)
+
+    # Everything else is LLM territory (with user-correction override),
+    # since the classifier only predicts keep.
+    for field in ("in_focus", "eye_focus", "motion", "composition",
                   "lighting", "animal_type"):
         v = effective(field)
         if isinstance(v, str):

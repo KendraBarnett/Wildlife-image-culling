@@ -348,9 +348,15 @@ function renderCard(img) {
 
   const badges = document.createElement("div");
   badges.className = "badges";
-  if (img.ai_keep === "yes") badges.appendChild(badge("KEEP", "good"));
-  else if (img.ai_keep === "maybe") badges.appendChild(badge("MAYBE", "warn"));
-  else if (img.ai_keep === "no") badges.appendChild(badge("cull", "bad"));
+  // Grid card badge uses the same precedence chain as the modal:
+  // user correction > personal classifier > LLM. Adds a small "·"
+  // suffix when the source is user/classifier so you can tell at a
+  // glance whether the badge is a trusted signal or just the LLM.
+  const eff = getEffectiveKeep(img);
+  const src = eff.source === "user" ? " ✎" : eff.source === "classifier" ? " ⚙" : "";
+  if (eff.keep === "yes") badges.appendChild(badge("KEEP" + src, "good"));
+  else if (eff.keep === "maybe") badges.appendChild(badge("MAYBE" + src, "warn"));
+  else if (eff.keep === "no") badges.appendChild(badge("cull" + src, "bad"));
   if (img.ai_status === "done") {
     if (img.ai_in_focus === "no") badges.appendChild(badge("OOF", "bad"));
     if (img.ai_motion === "in_motion") badges.appendChild(badge("motion", "good"));
@@ -618,40 +624,73 @@ function getPrimaryAi(img) {
   return img.ai || {};
 }
 
+function getEffectiveKeep(img) {
+  // PRECEDENCE CHAIN for the keep verdict:
+  //   1. User correction          (always wins — explicit ground truth)
+  //   2. Personal classifier      (learned from user's labels, more
+  //                                accurate than the local LLM)
+  //   3. LLM ai_keep              (last resort)
+  //
+  // The local 7B-11B vision model is unreliable at the keep judgment
+  // specifically. The classifier trained on the user's own labels is
+  // already a better signal once it has any training data. So we make
+  // it the authoritative source for the badge once it's run, demoting
+  // the LLM's keep field to informational.
+  const fb = img.ai_feedback || {};
+  if (["yes", "maybe", "no"].includes(fb.keep)) {
+    return { keep: fb.keep, source: "user", confidence: 1.0 };
+  }
+  if (img.learned_keep && img.learned_keep_confidence != null) {
+    const conf = img.learned_keep_confidence;
+    // Low-confidence predictions become "maybe" — the photographer
+    // should look at them rather than auto-trust either side.
+    if (conf > 0.35 && conf < 0.65) {
+      return { keep: "maybe", source: "classifier", confidence: conf };
+    }
+    return { keep: img.learned_keep, source: "classifier", confidence: conf };
+  }
+  const ai = getPrimaryAi(img);
+  return { keep: ai.keep, source: "llm", confidence: null };
+}
+
 function getEffectiveAi(img) {
-  // The 'effective' verdict shown in the main modal view: AI's output
-  // OVERLAID with the user's corrections. If the user has corrected a
-  // field, their truth is what gets displayed. This stops the modal
-  // from confidently showing wrong AI calls after the user has flagged
-  // them — the user wants to see THEIR truth as the primary signal.
+  // The 'effective' record shown in the main modal view. Three layers:
+  //   - LLM's raw output for descriptive fields (subject, species, etc.)
+  //   - Personal classifier OR focus-override for the keep verdict
+  //   - User corrections override EVERYTHING above
   const ai = getPrimaryAi(img);
   const fb = img.ai_feedback;
-  if (!fb) return { ...ai, _corrected_fields: [] };
-
-  const merged = { ...ai };
+  const eff = getEffectiveKeep(img);
+  const merged = { ...ai, keep: eff.keep, _keep_source: eff.source, _keep_confidence: eff.confidence };
   const correctedFields = [];
 
-  const fields = [
-    "keep", "in_focus", "eye_focus", "motion", "composition",
-    "lighting", "animal_type", "species", "subject",
-  ];
-  for (const k of fields) {
-    if (fb[k] !== undefined && fb[k] !== null && fb[k] !== "") {
-      merged[k] = fb[k];
-      correctedFields.push(k);
+  // The keep field is special — its "source" is already set above.
+  // For the rest, user corrections override the LLM's value.
+  if (eff.source === "user") correctedFields.push("keep");
+
+  if (fb) {
+    const fields = [
+      "in_focus", "eye_focus", "motion", "composition",
+      "lighting", "animal_type", "species", "subject",
+    ];
+    for (const k of fields) {
+      if (fb[k] !== undefined && fb[k] !== null && fb[k] !== "") {
+        merged[k] = fb[k];
+        correctedFields.push(k);
+      }
     }
-  }
-  if (typeof fb.is_silhouette === "boolean") {
-    merged.is_silhouette = fb.is_silhouette;
-    correctedFields.push("is_silhouette");
-  }
-  if (Array.isArray(fb.technical_issues)) {
-    merged.technical_issues = fb.technical_issues;
-    correctedFields.push("technical_issues");
-  }
-  if (fb.note) {
-    merged.notes = fb.note;
-    correctedFields.push("notes");
+    if (typeof fb.is_silhouette === "boolean") {
+      merged.is_silhouette = fb.is_silhouette;
+      correctedFields.push("is_silhouette");
+    }
+    if (Array.isArray(fb.technical_issues)) {
+      merged.technical_issues = fb.technical_issues;
+      correctedFields.push("technical_issues");
+    }
+    if (fb.note) {
+      merged.notes = fb.note;
+      correctedFields.push("notes");
+    }
   }
   merged._corrected_fields = correctedFields;
   return merged;
@@ -780,9 +819,24 @@ function renderAiBlock(img) {
   const exifBlock = renderExifBlock(img);
   const learnedBlock = renderLearnedBlock(img);
 
+  // Source attribution under the KEEP badge: tells the user WHERE this
+  // verdict came from so they can trust or question it appropriately.
+  const keepSource = (() => {
+    if (a._keep_source === "user") return `<div class="keep-source keep-source-user">based on your correction</div>`;
+    if (a._keep_source === "classifier") {
+      const pct = Math.round((a._keep_confidence || 0) * 100);
+      return `<div class="keep-source keep-source-classifier">from your personal model · ${pct}% confident</div>`;
+    }
+    if (a._keep_source === "llm") return `<div class="keep-source keep-source-llm">from local AI · least reliable signal</div>`;
+    return "";
+  })();
+
   el.innerHTML = `
     <div class="triage-header">
-      <div class="triage-keep">${keepBadge}</div>
+      <div class="triage-keep">
+        ${keepBadge}
+        ${keepSource}
+      </div>
       <div class="triage-model muted">${esc(triageModel)}</div>
     </div>
     ${learnedBlock}
