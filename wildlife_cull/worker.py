@@ -16,29 +16,37 @@ def _log(message: str) -> None:
 # IMPORTANT: wildlife photos with shallow depth-of-field have low global
 # variance because the bokeh background contributes near-zero gradient
 # energy. A tack-sharp portrait of a bird with a creamy out-of-focus
-# background can score in the 50-120 range — well into what would
-# normally be "soft" territory. So the override here is conservative:
-# only fire on EXTREMELY low values that can't be explained by bokeh.
-_FOCUS_OOF_HARD_FLOOR = 18.0   # at this score the image really is OOF
+# background can score in the 50-120 range. Above the OOF floor, there
+# is sharp content somewhere in the frame.
+_FOCUS_OOF_HARD_FLOOR = 18.0   # below this: deterministically OOF
+_FOCUS_SHARP_FLOOR = 40.0      # above this: sharp content exists, LLM's
+                               # claims of OOF/not-visible/soft are wrong
 
 
 def _enforce_sharpness_from_focus_score(parsed: dict, focus_score) -> dict:
-    """Override the LLM's sharpness fields ONLY when the math is
-    unambiguous. Calibrated to be conservative — the previous version
-    was over-culling sharp images with shallow-DOF backgrounds.
+    """Bidirectional sharpness override — math beats LLM hallucinations
+    in both directions.
 
-    Rule: only override if focus_score < 18. Below this floor, the
-    entire frame including the subject lacks gradient energy — this
-    isn't a depth-of-field artifact, it's a genuinely blurry image.
-    In every other case, trust the LLM's call (the LLM has visual
-    context the variance score does not — it can see whether the
-    subject's eye looks sharp even when the bokeh drops the global
-    variance).
+    The LLM lies in BOTH directions: it confidently says 'sharp eye' on
+    blurry images AND 'not in focus' on perfectly sharp images. The
+    Laplacian variance is a deterministic measurement that cannot
+    hallucinate. Use it to correct the LLM wherever it disagrees with
+    the math.
 
-    A 'soft band' override would catch some marginal cases but at the
-    cost of culling many genuine keepers, which is much worse. Better
-    to err on the side of keep — the photographer can correct false
-    keeps faster than they can recover from false culls."""
+    Three bands:
+      focus_score < 18:   hard cull — image lacks gradient energy
+                          everywhere. Override LLM to OOF / keep=no.
+      focus_score 18-40:  ambiguous band — could be very soft or very
+                          shallow DOF. Trust the LLM here.
+      focus_score >= 40:  sharp content exists in the frame. If LLM
+                          said in_focus=no / eye_focus=soft/not_visible
+                          / keep=no with OOF in issues, override to
+                          sharp/visible/keep=yes. The LLM was wrong.
+
+    The bidirectional override is critical because the LLM is just as
+    likely to say 'OOF' on a sharp image (the failure mode the user just
+    showed) as it is to say 'sharp' on a blurry one (the failure mode
+    we fixed earlier)."""
     if not isinstance(parsed, dict):
         return parsed
     if focus_score is None:
@@ -48,33 +56,77 @@ def _enforce_sharpness_from_focus_score(parsed: dict, focus_score) -> dict:
     except (TypeError, ValueError):
         return parsed
 
-    if fs >= _FOCUS_OOF_HARD_FLOOR:
-        # Trust the LLM. Subject-sharp + bokeh-background images live in
-        # the 30-150 range and the LLM gets them right; the math doesn't.
-        return parsed
-
-    # Below the hard floor — every part of the frame lacks high-frequency
-    # detail. This is real out-of-focus, not depth of field. Override.
     issues = parsed.get("technical_issues") or []
     if not isinstance(issues, list):
         issues = []
-    if "out_of_focus" not in issues:
-        issues.append("out_of_focus")
-
-    parsed["in_focus"] = "no"
-    parsed["eye_focus"] = "not_visible"
-    parsed["technical_issues"] = issues
-    parsed["keep"] = "no"
-
     notes = parsed.get("notes") or ""
-    override_note = (
-        f" [Auto: focus_score={fs:.1f} < {_FOCUS_OOF_HARD_FLOOR:.0f} — "
-        f"image-wide variance too low for bokeh to explain, "
-        f"deterministically out of focus.]"
-    )
-    if override_note not in notes:
-        parsed["notes"] = (notes + override_note).strip()
 
+    if fs < _FOCUS_OOF_HARD_FLOOR:
+        # Image really is out of focus everywhere — no gradient energy.
+        if "out_of_focus" not in issues:
+            issues.append("out_of_focus")
+        parsed["in_focus"] = "no"
+        parsed["eye_focus"] = "not_visible"
+        parsed["technical_issues"] = issues
+        parsed["keep"] = "no"
+        override_note = (
+            f" [Auto: focus_score={fs:.1f} < {_FOCUS_OOF_HARD_FLOOR:.0f} — "
+            f"image-wide variance too low for bokeh to explain, "
+            f"deterministically out of focus.]"
+        )
+        if override_note not in notes:
+            parsed["notes"] = (notes + override_note).strip()
+        return parsed
+
+    if fs >= _FOCUS_SHARP_FLOOR:
+        # Sharp content exists in the frame. The LLM saying 'not in focus'
+        # / 'eye not visible' / 'soft' with this much gradient energy is
+        # almost always wrong (it's hallucinating softness on a thumbnail
+        # of a real keeper). Override the sharpness fields and, if the
+        # only reason the LLM culled was sharpness, override the keep too.
+        sharpness_issue_set = {"out_of_focus", "soft_edges"}
+        issues_filtered = [i for i in issues if i not in sharpness_issue_set]
+
+        overrode_any = False
+        if parsed.get("in_focus") == "no":
+            parsed["in_focus"] = "yes"
+            overrode_any = True
+        if parsed.get("eye_focus") in ("soft", "not_visible"):
+            parsed["eye_focus"] = "sharp"
+            overrode_any = True
+        if len(issues_filtered) != len(issues):
+            parsed["technical_issues"] = issues_filtered
+            issues = issues_filtered
+            overrode_any = True
+
+        # If the LLM culled and the cull was driven by the sharpness
+        # claims we just overrode, promote to keep="yes". The user
+        # explicitly said false culls are more expensive than false
+        # keeps. Other cull reasons (composition=weak, clipped_subject,
+        # camera_shake, etc.) would still hold; we only flip when the
+        # remaining issues list is sharpness-only.
+        non_sharpness_issues = [
+            i for i in issues
+            if i not in sharpness_issue_set
+        ]
+        if (parsed.get("keep") == "no" and overrode_any
+                and not non_sharpness_issues
+                and parsed.get("composition") != "weak"):
+            parsed["keep"] = "yes"
+            overrode_any = True
+
+        if overrode_any:
+            override_note = (
+                f" [Auto: focus_score={fs:.1f} ≥ {_FOCUS_SHARP_FLOOR:.0f} — "
+                f"image has sharp content; LLM softness / not-visible "
+                f"claims overridden by gradient math.]"
+            )
+            if override_note not in notes:
+                parsed["notes"] = (notes + override_note).strip()
+        return parsed
+
+    # 18-40: ambiguous band. Trust the LLM (could be very soft, could
+    # be very shallow DOF — math doesn't distinguish reliably here).
     return parsed
 
 
